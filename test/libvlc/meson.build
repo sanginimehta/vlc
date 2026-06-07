@@ -14,6 +14,13 @@ vlc_tests += {
 }
 
 vlc_tests += {
+    'name' : 'test_libvlc_volume',
+    'sources' : files('volume.c'),
+    'suite' : ['libvlc'],
+    'link_with' : [libvlc]
+}
+
+vlc_tests += {
     'name' : 'test_libvlc_media',
     'sources' : files('media.c'),
     'link_with' : [libvlc, libvlccore],
