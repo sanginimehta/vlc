@@ -21,6 +21,12 @@ vlc_tests += {
 }
 
 vlc_tests += {
+    'name' : 'test_libvlc_player_state',
+    'sources' : files('player_state.c'),
+    'suite' : ['libvlc'],
+}
+
+vlc_tests += {
     'name' : 'test_libvlc_media',
     'sources' : files('media.c'),
     'link_with' : [libvlc, libvlccore],
