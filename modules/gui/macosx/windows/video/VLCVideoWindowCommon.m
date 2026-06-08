@@ -68,6 +68,7 @@ NSString *VLCWindowShouldShowController = @"VLCWindowShouldShowController";
     NSRect _frameBeforeLionFullscreen;
 
     BOOL _preFullScreenVideoViewLibraryControlsDisplayed;
+    BOOL _wasFloatOnTopBeforeFullscreen;
 }
 
 - (void)hasBecomeFullscreen;
@@ -268,6 +269,8 @@ NSString *VLCWindowShouldShowController = @"VLCWindowShouldShowController";
     if ([self hasActiveVideo]) {
         vout_thread_t *p_vout = [_playerController videoOutputThreadForKeyWindow];
         if (p_vout) {
+            _wasFloatOnTopBeforeFullscreen = var_GetBool(p_vout, "video-on-top");
+            var_SetBool(p_vout, "video-on-top", false);
             var_SetBool(p_vout, "fullscreen", true);
             vout_Release(p_vout);
         }
@@ -309,6 +312,9 @@ NSString *VLCWindowShouldShowController = @"VLCWindowShouldShowController";
         vout_thread_t *p_vout = [_playerController videoOutputThreadForKeyWindow];
         if (p_vout) {
             var_SetBool(p_vout, "fullscreen", false);
+            if (_wasFloatOnTopBeforeFullscreen) {
+                var_SetBool(p_vout, "video-on-top", true);
+            }
             vout_Release(p_vout);
         }
     }
@@ -501,6 +507,8 @@ NSString *VLCWindowShouldShowController = @"VLCWindowShouldShowController";
     if ([self hasActiveVideo]) {
         vout_thread_t *p_vout = [_playerController videoOutputThreadForKeyWindow];
         if (p_vout) {
+            _wasFloatOnTopBeforeFullscreen = var_GetBool(p_vout, "video-on-top");
+            var_SetBool(p_vout, "video-on-top", false);
             var_SetBool(p_vout, "fullscreen", true);
             vout_Release(p_vout);
         }
@@ -637,6 +645,9 @@ NSString *VLCWindowShouldShowController = @"VLCWindowShouldShowController";
         vout_thread_t *p_vout = [_playerController videoOutputThreadForKeyWindow];
         if (p_vout) {
             var_SetBool(p_vout, "fullscreen", false);
+            if (_wasFloatOnTopBeforeFullscreen) {
+                var_SetBool(p_vout, "video-on-top", true);
+            }
             vout_Release(p_vout);
         }
     }

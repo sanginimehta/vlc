@@ -164,10 +164,6 @@
     _currentPosition =
         [[VLCLibraryMediaSourceViewNavigationCurrentStackPosition alloc] initWithStackIndex:newPositionIndex andState:_navigationStates[newPositionIndex]];
 
-    VLCInputNode *node = _currentPosition.navigationState.currentNodeDisplayed;
-    VLCInputNodePathControlItem *nodePathItem = [[VLCInputNodePathControlItem alloc] initWithInputNode:node];
-    [self.libraryWindow.mediaSourcePathControl appendInputNodePathControlItem:nodePathItem];
-
     [self setMediaSourceViewToState:_currentPosition.navigationState];
 }
 
@@ -180,8 +176,6 @@
     NSUInteger newPositionIndex = _currentPosition.navigationStackIndex - 1;
     _currentPosition =
         [[VLCLibraryMediaSourceViewNavigationCurrentStackPosition alloc] initWithStackIndex:newPositionIndex andState:_navigationStates[newPositionIndex]];
-
-    [self.libraryWindow.mediaSourcePathControl removeLastInputNodePathControlItem];
 
     [self setMediaSourceViewToState:_currentPosition.navigationState];
 }
@@ -196,33 +190,18 @@
         NSUInteger firstIndexToRemove = _currentPosition.navigationStackIndex + 1;
         // -1 to account for the array count
         NSRange rangeToRemove = NSMakeRange(firstIndexToRemove, (_navigationStates.count - 1) - _currentPosition.navigationStackIndex);
-        [self removeAndCleanUpStatesInRange:rangeToRemove];
         [_navigationStates removeObjectsInRange:rangeToRemove];
     }
 
     VLCLibraryMediaSourceViewNavigationState * const navigationState =
         [[VLCLibraryMediaSourceViewNavigationState alloc] initFromMediaSourceDataSource:self.baseDataSource.childDataSource];
+    navigationState.pathControlItems =
+        self.libraryWindow.mediaSourcePathControl.orderedInputNodePathControlItems;
     _currentPosition =
         [[VLCLibraryMediaSourceViewNavigationCurrentStackPosition alloc] initWithStackIndex:_navigationStates.count andState:navigationState];
     [_navigationStates addObject:navigationState];
 
     [self updateDelegateNavigationButtons];
-}
-
-- (void)removeAndCleanUpStatesInRange:(NSRange)range
-{
-    NSAssert(range.location + range.length - 1 < _navigationStates.count, @"Invalid range for state removal and cleanup, out of bounds.");
-    
-    for (NSUInteger i = range.location; i < range.length; ++i) {
-        VLCLibraryMediaSourceViewNavigationState *state = [_navigationStates objectAtIndex:i];
-        VLCInputNode *stateNode = state.currentNodeDisplayed;
-        
-        if (stateNode) {
-            [state.currentMediaSource.displayedMediaSource clearChildNodesForNode:stateNode.vlcInputItemNode];
-        }
-        
-        [_navigationStates removeObjectAtIndex:i];
-    }
 }
 
 - (void)updateDelegateNavigationButtons
@@ -239,6 +218,7 @@
 {
     [self.baseDataSource setChildDataSource:state.currentMediaSource];
     [self.baseDataSource.childDataSource setNodeToDisplay:state.currentNodeDisplayed];
+    [self.libraryWindow.mediaSourcePathControl setPathWithInputNodePathControlItems:state.pathControlItems];
 
     [self updateDelegateNavigationButtons];
 }

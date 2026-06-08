@@ -376,9 +376,6 @@ fi
 if [ -n "$BREAKPAD" ]; then
      CONTRIBFLAGS="$CONTRIBFLAGS --enable-breakpad"
 fi
-if [ "$RELEASE" != "yes" ]; then
-     CONTRIBFLAGS="$CONTRIBFLAGS --disable-optim"
-fi
 if [ -n "$DISABLEGUI" ]; then
     CONTRIBFLAGS="$CONTRIBFLAGS --disable-qt --disable-qtsvg --disable-qtdeclarative --disable-qtshadertools --disable-qtwayland"
 fi
@@ -529,6 +526,12 @@ if [ -n "$INSTALL_PATH" ]; then
     CONFIGFLAGS="$CONFIGFLAGS --with-packagedir=$INSTALL_PATH"
 fi
 
+if [ "$INSTALLER" = "n" ]; then
+    COMPILEFLAGS="$COMPILEFLAGS V=1"
+    MCOMPILEFLAGS="$MCOMPILEFLAGS --verbose"
+fi
+
+
 if [ -n "$BUILD_MESON" ]; then
     # disable alarm() calls in tests. The timeout is handled by meson
     VLC_CFLAGS="$VLC_CFLAGS -Dalarm="
@@ -543,6 +546,10 @@ if [ -n "$BUILD_MESON" ]; then
     fi
 
     BUILD_PATH="$( pwd -P )"
+
+    # we don't want to install in <destdir>/usr/local, just <destdir>
+    MCONFIGFLAGS="$MCONFIGFLAGS --prefix=/"
+
     # generate the crossfile.meson
     test -e $SHORTARCH-meson/crossfile.meson && unlink $SHORTARCH-meson/crossfile.meson
     exec 3>$SHORTARCH-meson/crossfile.meson || return $?
@@ -587,8 +594,21 @@ if [ -n "$BUILD_MESON" ]; then
         --cross-file ${BUILD_PATH}/contrib/$CONTRIB_PREFIX/share/meson/cross/contrib.ini
 
     info "Compiling"
-    cd ${BUILD_PATH}/$SHORTARCH-meson
-    meson compile -j $JOBS
+    meson compile -j $JOBS -C ${BUILD_PATH}/$SHORTARCH-meson ${MCOMPILEFLAGS}
+
+    if [ -n "$INSTALL_PATH" ]; then
+        MINSTALLFLAGS="--destdir=$INSTALL_PATH $MINSTALLFLAGS"
+    else
+        MINSTALLFLAGS="--destdir=${BUILD_PATH}/$SHORTARCH-meson/vlc-$SHORTARCH $MINSTALLFLAGS"
+    fi
+
+    if [ "$INSTALLER" = "n" ]; then
+        meson install -C ${BUILD_PATH}/$SHORTARCH-meson ${MINSTALLFLAGS}
+        VLC_GIT_TAG="$(git describe --tags --long --match '?.*.*' --always)"
+        rm -rf ${BUILD_PATH}/$SHORTARCH-meson/vlc-$SHORTARCH-$VLC_GIT_TAG-debug.7z
+        cd ${BUILD_PATH}/$SHORTARCH-meson && \
+            7z a -t7z -m0=lzma -mx=9 -mfb=64 -md=32m -ms=on vlc-$SHORTARCH-$VLC_GIT_TAG-debug.7z vlc-$SHORTARCH
+    fi
 else
     info "Bootstrapping"
     ${VLC_ROOT_PATH}/bootstrap
@@ -627,7 +647,7 @@ else
     ${SCRIPT_PATH}/configure.sh --host=$TRIPLET --with-contrib=../contrib/$CONTRIB_PREFIX "$WIXPATH" $CONFIGFLAGS
 
     info "Compiling"
-    make -j$JOBS
+    make -j$JOBS ${COMPILEFLAGS}
 
     if [ "$INSTALLER" = "n" ]; then
         make package-win32-debug-7zip

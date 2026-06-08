@@ -63,7 +63,7 @@ typedef struct
     /*
      * Input properties
      */
-    int i_state;
+    enum vlc_packetizer_state i_state;
     int i_type;
 
     block_bytestream_t bytestream;
@@ -493,15 +493,15 @@ static int LOASParse(decoder_t *p_dec, uint8_t *p_buffer, int i_buffer)
         goto truncated;
 
     /* FIXME do we need to split the subframe into independent packet ? */
-    if (p_sys->latm.i_sub_frames > 1)
+    if (p_sys->latm.numSubFrames != 0)
         msg_Err(p_dec, "latm sub frames not yet supported, please send a sample");
 
-    for (uint8_t i_sub = 0; i_sub < p_sys->latm.i_sub_frames; i_sub++) {
+    for (uint8_t i_sub = 0; i_sub <= p_sys->latm.numSubFrames; i_sub++) {
         unsigned pi_payload[MPEG4_STREAMMUX_MAX_PROGRAM][MPEG4_STREAMMUX_MAX_LAYER];
-        if (p_sys->latm.b_same_time_framing) {
+        if (p_sys->latm.allStreamsSameTimeFraming) {
             /* Payload length */
-            for (uint8_t i_program = 0; i_program < p_sys->latm.i_programs; i_program++) {
-                for (uint8_t i_layer = 0; i_layer < p_sys->latm.pi_layers[i_program]; i_layer++) {
+            for (uint8_t i_program = 0; i_program <= p_sys->latm.numProgram; i_program++) {
+                for (uint8_t i_layer = 0; i_layer <= p_sys->latm.p_numLayer[i_program]; i_layer++) {
                     const MPEG4_audio_stream_t *st = &p_sys->latm.stream[p_sys->latm.pi_stream[i_program][i_layer]];
                     if (st->i_frame_length_type == 0) {
                         unsigned i_payload = 0;
@@ -526,8 +526,8 @@ static int LOASParse(decoder_t *p_dec, uint8_t *p_buffer, int i_buffer)
             }
 
             /* Payload Data */
-            for (uint8_t i_program = 0; i_program < p_sys->latm.i_programs; i_program++) {
-                for (uint8_t i_layer = 0; i_layer < p_sys->latm.pi_layers[i_program]; i_layer++) {
+            for (uint8_t i_program = 0; i_program <= p_sys->latm.numProgram; i_program++) {
+                for (uint8_t i_layer = 0; i_layer <= p_sys->latm.p_numLayer[i_program]; i_layer++) {
                     /* XXX we only extract 1 stream */
                     if (i_program != 0 || i_layer != 0)
                         break;
@@ -594,10 +594,8 @@ static int LOASParse(decoder_t *p_dec, uint8_t *p_buffer, int i_buffer)
         }
     }
 
-#if 0
-    if (p_sys->latm.i_other_data > 0)
-        ; // TODO
-#endif
+
+    bs_skip(&s, p_sys->latm.otherDataLenBits);
     bs_align(&s);
 
     return i_accumulated;
@@ -703,7 +701,7 @@ static block_t *PacketizeStreamBlock(decoder_t *p_dec, block_t **pp_block)
                 p_sys->i_type = TYPE_LOAS;
                 break;
             }
-            block_SkipByte(&p_sys->bytestream);
+            (void) block_SkipByte(&p_sys->bytestream);
         }
         if (p_sys->i_state != STATE_SYNC) {
             block_BytestreamFlush(&p_sys->bytestream);
@@ -827,10 +825,10 @@ static block_t *PacketizeStreamBlock(decoder_t *p_dec, block_t **pp_block)
         p_buf = p_out_buffer->p_buffer;
 
         /* Skip the ADTS/LOAS header */
-        block_SkipBytes(&p_sys->bytestream, p_sys->i_header_size);
+        (void) block_SkipBytes(&p_sys->bytestream, p_sys->i_header_size);
 
         /* Copy the whole frame into the buffer */
-        block_GetBytes(&p_sys->bytestream, p_buf, p_sys->i_frame_size);
+        (void) block_GetBytes(&p_sys->bytestream, p_buf, p_sys->i_frame_size);
         if (p_sys->i_type != TYPE_ADTS) { /* parse/extract the whole frame */
             assert(p_sys->i_type == TYPE_LOAS);
             p_out_buffer->i_buffer = LOASParse(p_dec, p_buf, p_sys->i_frame_size);
@@ -857,6 +855,9 @@ static block_t *PacketizeStreamBlock(decoder_t *p_dec, block_t **pp_block)
         p_sys->i_state = STATE_NOSYNC;
 
         return p_out_buffer;
+
+    case STATE_CUSTOM_FIRST:
+        break; // do nothing
     }
 
     return NULL;

@@ -82,6 +82,10 @@ AC_ARG_VAR([DESKTOP_FILE_VALIDATE], [Validator for desktop entry files])
 AC_CHECK_PROGS([DESKTOP_FILE_VALIDATE], [${DESKTOP_FILE_VALIDATE} desktop-file-validate], :)
 AC_ARG_VAR([BUILDCC], [Build system C11 or C99 compiler command])
 AC_CHECK_PROGS([BUILDCC], [c17-gcc c17 c11-gcc c11 c99-gcc c99], [false])
+dnl When cross-compiling, only accept $host-prefixed objcopy or llvm-objcopy.
+dnl Bare objcopy from the build system cannot handle cross-target objects.
+dnl llvm-objcopy is target-agnostic (reads the ELF header) so it is safe.
+AC_CHECK_PROGS(OBJCOPY, [${ac_tool_prefix}objcopy llvm-objcopy], :)
 AS_IF([test "$BUILDCC" = "false"], [
   AC_MSG_ERROR([Cannot find native C99 compiler: please define BUILDCC.])
 ])
@@ -325,7 +329,6 @@ int foo() { return my_array[0]; }
     AX_APPEND_COMPILE_FLAGS([-static-libgcc], [CXXFLAGS], [-Werror])
     AC_LANG_POP(C++)
     AC_CHECK_TOOL(WINDRES, windres, :)
-    AC_CHECK_TOOL(OBJCOPY, objcopy, :)
     AC_PREPROC_IFELSE([AC_LANG_PROGRAM(
       [[#ifdef _WIN32_WINNT
        # error _WIN32_WINNT already defined
@@ -489,6 +492,29 @@ case "${host_os}" in
     ;;
 esac
 
+dnl
+dnl Drops unused symbols.
+dnl ELF linkers use --gc-sections, while Mach-O uses -dead_strip.
+dnl
+AC_MSG_CHECKING([for linker dead-code stripping flag])
+GC_SECTIONS_LDFLAGS=""
+VLC_SAVE_FLAGS
+AX_APPEND_FLAG([-Wl,--gc-sections], [LDFLAGS])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([], [])],
+    [GC_SECTIONS_LDFLAGS="-Wl,--gc-sections"], [])
+VLC_RESTORE_FLAGS
+AS_IF([test -z "${GC_SECTIONS_LDFLAGS}"], [
+    VLC_SAVE_FLAGS
+    AX_APPEND_FLAG([-Wl,-dead_strip], [LDFLAGS])
+    AC_LINK_IFELSE([AC_LANG_PROGRAM([], [])],
+        [GC_SECTIONS_LDFLAGS="-Wl,-dead_strip"], [])
+    VLC_RESTORE_FLAGS
+])
+AS_IF([test -n "${GC_SECTIONS_LDFLAGS}"],
+    [AC_MSG_RESULT([${GC_SECTIONS_LDFLAGS}])],
+    [AC_MSG_RESULT([none])])
+AC_SUBST([GC_SECTIONS_LDFLAGS])
+
 dnl WinRT
 AC_ARG_ENABLE([winstore_app],
      AS_HELP_STRING([--enable-winstore-app],
@@ -511,8 +537,8 @@ AS_IF([test "${SYS}" = "mingw32"],[
     vlc_winstore_app=1
     LIBCOM="-loleaut32"
     VLC_ADD_LIBS([libvlccore], [-lruntimeobject])
-    AC_LIBOBJ([gai_strerror])
   ],[])
+  AC_LIBOBJ([gai_strerror])
   AC_SUBST([LIBCOM])
   AC_SUBST([LIBCOMCXXFLAGS])
   ])
@@ -549,6 +575,16 @@ AM_CONDITIONAL([HAVE_LIBANL],  [test "${HAVE_LIBANL}" = "1"])
 AM_CONDITIONAL([HAVE_PROCESS_SPAWN],  [test "${HAVE_PROCESS_SPAWN}" = "1"])
 AM_COND_IF([HAVE_PROCESS_SPAWN], [
   AC_DEFINE([HAVE_VLC_PROCESS_SPAWN], [1], [Define to 1 if vlc_process_Spawn() is usable.])
+])
+
+dnl External (out-of-process) preparser requires both process spawn support
+dnl and dynamic linking: in static builds libvlc.a and the preparser binary
+dnl both define vlc_module_name, causing a multiple-definition link error.
+AM_CONDITIONAL([HAVE_EXTERNAL_PREPARSER],
+    [test "${HAVE_PROCESS_SPAWN}" = "1" -a "${enable_shared}" != "no"])
+AM_COND_IF([HAVE_EXTERNAL_PREPARSER], [
+  AC_DEFINE([HAVE_VLC_EXTERNAL_PREPARSER], [1],
+            [Define to 1 if the out-of-process preparser is supported.])
 ])
 
 AM_CONDITIONAL([HAVE_WIN32],   [test "${SYS}" = "mingw32"])
@@ -694,9 +730,6 @@ DOLT
 
 lt_cv_deplibs_check_method=pass_all
 
-AS_IF([test "${enable_shared}" = "no" -a "${enable_vlc}" != "no"], [
-  AC_MSG_ERROR([VLC is based on plugins. Shared libraries cannot be disabled.])
-])
 
 dnl
 dnl Gettext stuff
@@ -1023,7 +1056,119 @@ AS_IF([test "${enable_shared}" = "no"], [
   have_dynamic_objects=no
 ])
 AM_CONDITIONAL([HAVE_DYNAMIC_PLUGINS], [test "${have_dynamic_objects}" != "no"])
-AM_CONDITIONAL([HAVE_PARTIAL_LINKING], [false])
+
+dnl Partial linking merges each plugin and its static dependencies into a
+dnl single relocatable object, enabling fully-static VLC builds.
+dnl Disabled by default for now; this will become the default in the future.
+AC_ARG_ENABLE([partial-linking],
+  AS_HELP_STRING([--enable-partial-linking],
+    [use partial linking for static plugin builds (default disabled)]))
+
+dnl Partial linking is only supported on ELF platforms and Apple platforms
+have_partial_linking_support=no
+AS_IF([test "${SYS}" = "linux" -o "${VENDOR}" = "android" -o "${SYS}" = "darwin"], [
+    have_partial_linking_support=yes
+])
+
+AS_IF([test "${enable_partial_linking}" = "yes" -a "${have_partial_linking_support}" != "yes"], [
+    AC_MSG_ERROR([Partial linking is not supported on this platform.])
+])
+
+have_partial_linking=no
+AS_IF([test "${enable_partial_linking}" = "yes" -a "${have_dynamic_objects}" = "no"], [
+    have_partial_linking=yes
+])
+
+AM_CONDITIONAL([HAVE_PARTIAL_LINKING], [test "${have_partial_linking}" = "yes"])
+AS_IF([test "${have_partial_linking}" = "yes"], [
+    AC_DEFINE([HAVE_PARTIAL_LINKING], 1, [Define if static plugins use partial linking])
+])
+AS_IF([test "${enable_shared}" = "no" -a "${have_partial_linking}" != "yes" -a "${enable_vlc}" != "no"], [
+    AC_MSG_ERROR([VLC requires partial linking to build with static plugins. Use --enable-partial-linking or --disable-vlc.])
+])
+
+dnl Check if the linker supports --force-group-allocation.
+dnl This flag resolves COMDAT section groups during partial linking, which are
+dnl generated when building C++ plugins. It proceed with intra-plugin
+dnl deduplication but will prevent cross-plugin deduplication since we don't
+dnl want the non-module ABI to be exposed out of the plugin object.
+FORCE_GROUP_ALLOCATION_LDFLAGS=""
+AS_IF([test "${have_partial_linking}" = "yes"], [
+    AC_CACHE_CHECK([whether the linker supports --force-group-allocation],
+        [vlc_cv_ld_force_group_allocation], [
+        VLC_SAVE_FLAGS
+        LDFLAGS="${LDFLAGS} -Wl,--force-group-allocation"
+        AC_LINK_IFELSE([AC_LANG_PROGRAM()],
+            [vlc_cv_ld_force_group_allocation=yes],
+            [vlc_cv_ld_force_group_allocation=no])
+        VLC_RESTORE_FLAGS
+    ])
+    AS_IF([test "${vlc_cv_ld_force_group_allocation}" = "yes"], [
+        FORCE_GROUP_ALLOCATION_LDFLAGS="-Wl,--force-group-allocation"
+    ])
+])
+
+dnl Test whether partial linking resolves COMDAT section groups.
+dnl C++ template instantiations produce COMDAT groups; if the linker does
+dnl not deduplicate them during -r, duplicate symbols will leak across
+dnl plugins at the final link.
+dnl
+dnl We test the behavior directly: compile two TUs with the same
+dnl template, partially link them, and check that the symbol appears
+dnl only once in the result.
+AS_IF([test "${have_partial_linking}" = "yes"], [
+    AC_CACHE_CHECK([whether partial linking resolves COMDAT groups],
+        [vlc_cv_ld_partial_link_comdat], [
+        vlc_cv_ld_partial_link_comdat=no
+        cat > conftest1.cpp <<EOF
+template<typename T> __attribute__((noinline)) T vlc_comdat_test(T x) { return x; }
+int vlc_comdat_a() { return vlc_comdat_test(1); }
+EOF
+        cat > conftest2.cpp <<EOF
+template<typename T> __attribute__((noinline)) T vlc_comdat_test(T x) { return x; }
+int vlc_comdat_b() { return vlc_comdat_test(2); }
+EOF
+        AS_IF([$CXX $CXXFLAGS $CPPFLAGS -c conftest1.cpp -o conftest1.o 2>/dev/null \
+            && $CXX $CXXFLAGS $CPPFLAGS -c conftest2.cpp -o conftest2.o 2>/dev/null \
+            && $CXX $CXXFLAGS $CPPFLAGS $LDFLAGS $FORCE_GROUP_ALLOCATION_LDFLAGS \
+                    -r -o conftest_partial.o conftest1.o conftest2.o 2>/dev/null],
+        [
+            comdat_count=`$NM conftest_partial.o 2>/dev/null \
+                | grep -c '[[TWV]].*vlc_comdat_test'`
+            AS_IF([test "$comdat_count" = "1"], [
+                vlc_cv_ld_partial_link_comdat=yes
+            ])
+        ])
+        rm -f conftest1.cpp conftest2.cpp conftest1.o conftest2.o conftest_partial.o
+    ])
+    AS_IF([test "${vlc_cv_ld_partial_link_comdat}" != "yes"], [
+        AS_IF([test "${have_dynamic_objects}" = "no" -a "${SYS}" != "darwin"], [
+            AC_MSG_ERROR([Partial linking does not resolve COMDAT groups. COMDAT deduplication is required for C++ static plugins.])
+        ])
+    ])
+])
+dnl On ELF, objcopy is required to localize symbols after partial linking.
+dnl The early detection (above) already ensures a target-compatible objcopy:
+dnl host-prefixed GNU objcopy or llvm-objcopy when cross-compiling.
+dnl On Darwin, ld64 -exported_symbol handles visibility so objcopy is not needed.
+AS_IF([test "${have_partial_linking}" = "yes" -a "${SYS}" != "darwin" -a "$OBJCOPY" = ":"], [
+    AC_MSG_ERROR([Partial linking on ELF requires objcopy or llvm-objcopy to localize symbols.])
+])
+AC_SUBST([FORCE_GROUP_ALLOCATION_LDFLAGS])
+
+dnl Check if the C++ compiler supports -fno-gnu-unique. GCC emits STB_GNU_UNIQUE
+dnl binding for some C++ symbols, which objcopy -G cannot localize. Emitting
+dnl WEAK instead lets partial-linked static module objects be combined without
+dnl multiple-definition errors and is also clang behavior.
+NO_GNU_UNIQUE_CXXFLAGS=""
+AS_IF([test "${have_partial_linking}" = "yes"], [
+    AC_LANG_PUSH([C++])
+    AX_CHECK_COMPILE_FLAG([-fno-gnu-unique], [
+        NO_GNU_UNIQUE_CXXFLAGS="-fno-gnu-unique"
+    ], [], [-Werror])
+    AC_LANG_POP([C++])
+])
+AC_SUBST([NO_GNU_UNIQUE_CXXFLAGS])
 
 AC_SUBST([LIBDL])
 
@@ -1074,7 +1219,7 @@ AC_CHECK_HEADER([syslog.h], [have_syslog="yes"], [have_syslog="no"])
 AM_CONDITIONAL([HAVE_SYSLOG], [test "$have_syslog" = "yes"])
 
 dnl  BSD
-AC_CHECK_HEADERS([netinet/tcp.h netinet/udplite.h sys/param.h sys/mount.h])
+AC_CHECK_HEADERS([netinet/tcp.h sys/param.h sys/mount.h])
 
 dnl  GNU/Linux
 AC_CHECK_HEADERS([features.h getopt.h linux/dccp.h linux/magic.h sys/auxv.h sys/eventfd.h])
@@ -5067,6 +5212,7 @@ AC_SUBST([RCC])
 AC_SUBST([UIC])
 AC_SUBST([QSB])
 AC_SUBST([WINDRES])
+AC_SUBST([OBJCOPY])
 AC_SUBST([LIBEXT])
 AC_SUBST([AM_CPPFLAGS])
 AC_SUBST([MACOSX_DEPLOYMENT_TARGET])

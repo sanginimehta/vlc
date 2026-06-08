@@ -1,7 +1,7 @@
 /*****************************************************************************
  *MainMenu.m: MacOS X interface module
  *****************************************************************************
- *Copyright (C) 2011-2019 Felix Paul Kühne
+ *Copyright (C) 2011-2026 Felix Paul Kühne
  *
  *Authors: Felix Paul Kühne <fkuehne -at- videolan -dot- org>
  *
@@ -22,6 +22,7 @@
 
 #import "VLCMainMenu.h"
 
+#import "extensions/NSMenuItem+VLCAdditions.h"
 #import "extensions/NSScreen+VLCAdditions.h"
 #import "extensions/NSString+Helpers.h"
 
@@ -32,6 +33,7 @@
 
 #import "main/VLCMain.h"
 
+#import "menus/VLCRecentStreamsMenuController.h"
 #import "menus/renderers/VLCRendererMenuController.h"
 
 #import "panels/VLCAudioEffectsWindowController.h"
@@ -107,6 +109,7 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
     VLCPlayerController *_playerController;
     VLCPlayQueueSortingMenuController *_playQueueSortingController;
     VLCInformationWindowController *_infoWindowController;
+    VLCRecentStreamsMenuController *_recentStreamsMenuController;
 
     __strong VLCTimeSelectionPanelController *_timeSelectionPanel;
     __strong VLCCustomCropArWindowController *_customARController;
@@ -158,6 +161,8 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
     _rendererMenuController.rendererMenu = _rendererMenu;
     _playQueueSortingController = [[VLCPlayQueueSortingMenuController alloc] init];
     _sortPlayQueue.submenu = _playQueueSortingController.playQueueSortingMenu;
+    _recentStreamsMenuController =
+        [[VLCRecentStreamsMenuController alloc] initWithSubmenu:_recent_streamsMenu];
 
     [self mediaItemChanged:nil];
     [self playbackStateChanged:nil];
@@ -353,6 +358,7 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
     [_open_capture setTitle: _NS("Open Capture Device...")];
     [_connect_to_server setTitle: _NS("Connect to Server...")];
     [_open_recent setTitle: _NS("Open Recent")];
+    [_recent_streams setTitle: _NS("Recent Streams")];
     [_close_window setTitle: _NS("Close Window")];
     [_convertandsave setTitle: _NS("Convert / Stream...")];
     [_save_playlist setTitle: _NS("Save Playlist...")];
@@ -513,6 +519,74 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
     [_voutMenuSubtitlestrackMenu setTitle: _NS("Subtitles Track")];
     [_voutMenufullscreen setTitle: _NS("Fullscreen")];
     [_voutMenusnapshot setTitle: _NS("Snapshot")];
+
+    /* File menu */
+    [_open_generic vlc_setActionImageWithSystemSymbolName:@"doc.badge.ellipsis"];
+    [_open_file vlc_setActionImageWithSystemSymbolName:@"doc"];
+    [_open_disc vlc_setActionImageWithSystemSymbolName:@"opticaldisc"];
+    [_open_net vlc_setActionImageWithSystemSymbolName:@"antenna.radiowaves.left.and.right"];
+    [_open_capture vlc_setActionImageWithSystemSymbolName:@"camera.viewfinder"];
+    [_connect_to_server vlc_setActionImageWithSystemSymbolName:@"server.rack"];
+    [_revealInFinder vlc_setActionImageWithSystemSymbolName:@"folder"];
+    [_save_playlist vlc_setActionImageWithSystemSymbolName:@"square.and.arrow.down"];
+    [_convertandsave vlc_setActionImageWithSystemSymbolName:@"arrow.triangle.2.circlepath"];
+
+    /* Playback menu */
+    [_play vlc_setActionImageWithSystemSymbolName:@"play.fill"];
+    [_stop vlc_setActionImageWithSystemSymbolName:@"stop.fill"];
+    [_record vlc_setActionImageWithSystemSymbolName:@"record.circle"];
+    [_previous vlc_setActionImageWithSystemSymbolName:@"backward.end.fill"];
+    [_next vlc_setActionImageWithSystemSymbolName:@"forward.end.fill"];
+    [_fwd vlc_setActionImageWithSystemSymbolName:@"goforward.10"];
+    [_bwd vlc_setActionImageWithSystemSymbolName:@"gobackward.10"];
+    [_random vlc_setActionImageWithSystemSymbolName:@"shuffle"];
+    [_repeat vlc_setActionImageWithSystemSymbolName:@"repeat"];
+    [_AtoBloop vlc_setActionImageWithSystemSymbolName:@"repeat.1"];
+    [_jumpToTime vlc_setActionImageWithSystemSymbolName:@"timer"];
+    [_sortPlayQueue vlc_setActionImageWithSystemSymbolName:@"arrow.up.arrow.down"];
+    [_lyrics vlc_setActionImageWithSystemSymbolName:@"text.quote"];
+
+    /* Audio menu */
+    [_vol_up vlc_setActionImageWithSystemSymbolName:@"speaker.wave.3.fill"];
+    [_vol_down vlc_setActionImageWithSystemSymbolName:@"speaker.wave.1.fill"];
+    [_mute vlc_setActionImageWithSystemSymbolName:@"speaker.slash.fill"];
+    [_audiotrack vlc_setActionImageWithSystemSymbolName:@"waveform"];
+    [_channels vlc_setActionImageWithSystemSymbolName:@"speaker.2.fill"];
+    [_audioDevice vlc_setActionImageWithSystemSymbolName:@"airplay.audio"];
+    [_visual vlc_setActionImageWithSystemSymbolName:@"music.note.tv"];
+
+    /* Video menu */
+    [_fullscreenItem vlc_setActionImageWithSystemSymbolName:@"arrow.up.left.and.arrow.down.right"];
+    [_snapshot vlc_setActionImageWithSystemSymbolName:@"camera"];
+    [_floatontop vlc_setActionImageWithSystemSymbolName:@"square.3.layers.3d.top.filled"];
+    [_videotrack vlc_setActionImageWithSystemSymbolName:@"video"];
+
+    /* Subtitles menu */
+    [_openSubtitleFile vlc_setActionImageWithSystemSymbolName:@"captions.bubble"];
+    [_subtitle_track vlc_setActionImageWithSystemSymbolName:@"text.bubble"];
+
+    /* Window menu */
+    [_info vlc_setActionImageWithSystemSymbolName:@"info.circle"];
+    [_audioeffects vlc_setActionImageWithSystemSymbolName:@"slider.horizontal.3"];
+    [_videoeffects vlc_setActionImageWithSystemSymbolName:@"wand.and.sparkles"];
+    [_bookmarks vlc_setActionImageWithSystemSymbolName:@"bookmark"];
+    [_playQueue vlc_setActionImageWithSystemSymbolName:@"list.bullet"];
+
+    /* Vout context menu */
+    [_voutMenuplay vlc_setActionImageWithSystemSymbolName:@"play.fill"];
+    [_voutMenustop vlc_setActionImageWithSystemSymbolName:@"stop.fill"];
+    [_voutMenuRecord vlc_setActionImageWithSystemSymbolName:@"record.circle"];
+    [_voutMenuprev vlc_setActionImageWithSystemSymbolName:@"backward.end.fill"];
+    [_voutMenunext vlc_setActionImageWithSystemSymbolName:@"forward.end.fill"];
+    [_voutMenuvolup vlc_setActionImageWithSystemSymbolName:@"speaker.wave.3.fill"];
+    [_voutMenuvoldown vlc_setActionImageWithSystemSymbolName:@"speaker.wave.1.fill"];
+    [_voutMenumute vlc_setActionImageWithSystemSymbolName:@"speaker.slash.fill"];
+    [_voutMenuAudiotrack vlc_setActionImageWithSystemSymbolName:@"waveform"];
+    [_voutMenuVideotrack vlc_setActionImageWithSystemSymbolName:@"video"];
+    [_voutMenuOpenSubtitleFile vlc_setActionImageWithSystemSymbolName:@"captions.bubble"];
+    [_voutMenuSubtitlestrack vlc_setActionImageWithSystemSymbolName:@"text.bubble"];
+    [_voutMenufullscreen vlc_setActionImageWithSystemSymbolName:@"arrow.up.left.and.arrow.down.right"];
+    [_voutMenusnapshot vlc_setActionImageWithSystemSymbolName:@"camera"];
 }
 
 - (void)setupKeyboardShortcuts
@@ -627,8 +701,6 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
     if (_playerController.currentMedia != nil) {
         [self rebuildAoutMenu];
         [self rebuildVoutMenu];
-    } else {
-        self.windowMenu.autoenablesItems = NO;
     }
 }
 
@@ -1576,6 +1648,8 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
     [_play setTitle: _NS("Play")];
     [_dockMenuplay setTitle: _NS("Play")];
     [_voutMenuplay setTitle: _NS("Play")];
+    [_play vlc_setActionImageWithSystemSymbolName:@"play.fill"];
+    [_voutMenuplay vlc_setActionImageWithSystemSymbolName:@"play.fill"];
 }
 
 - (void)setPause
@@ -1583,6 +1657,8 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
     [_play setTitle: _NS("Pause")];
     [_dockMenuplay setTitle: _NS("Pause")];
     [_voutMenuplay setTitle: _NS("Pause")];
+    [_play vlc_setActionImageWithSystemSymbolName:@"pause.fill"];
+    [_voutMenuplay vlc_setActionImageWithSystemSymbolName:@"pause.fill"];
 }
 
 - (void)setRepeatOne
@@ -1975,6 +2051,10 @@ typedef NS_ENUM(NSInteger, VLCObjectType) {
         if (p_vout != NULL) {
             if (mi == self.floatontop) {
                 mi.state = var_GetBool(p_vout, "video-on-top") ? NSOnState : NSOffState;
+                if (_playerController.fullscreen) {
+                    vout_Release(p_vout);
+                    return NO;
+                }
             } else if (mi == self.fullscreenItem || mi == self.voutMenufullscreen) {
                 mi.state = _playerController.fullscreen ? NSOnState : NSOffState;
             }

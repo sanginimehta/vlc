@@ -127,7 +127,7 @@ video_filter_PLUGINS += \
 libsam3_plugin_la_SOURCES = video_filter/sam3.cpp
 libsam3_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) $(OPENCV4_CFLAGS)
 libsam3_plugin_la_CXXFLAGS = $(AM_CXXFLAGS) -fexceptions
-libsam3_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(video_filterdir)'
+libsam3_plugin_la_LDFLAGS = $(AM_LDFLAGS) $(GC_SECTIONS_LDFLAGS) -rpath '$(video_filterdir)'
 libsam3_plugin_la_LIBADD = $(LIBM) $(OPENCV4_LIBS)
 EXTRA_LTLIBRARIES += libsam3_plugin.la
 video_filter_LTLIBRARIES += $(LTLIBsam3)
@@ -150,6 +150,13 @@ video_filter_PLUGINS += libci_filters_plugin.la
 endif
 
 libopengl_filter_plugin_la_SOURCES = video_filter/opengl.c
+
+if HAVE_WIN32
+libopengl_filter_plugin_la_LIBADD = libvlc_opengl.la
+if HAVE_GL
+video_filter_PLUGINS += libopengl_filter_plugin.la
+endif
+endif
 
 if HAVE_LINUX
 if HAVE_ANDROID
@@ -228,7 +235,7 @@ endif
 libopencv_wrapper_plugin_la_SOURCES = video_filter/opencv_wrapper.cpp
 libopencv_wrapper_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) $(OPENCV_CFLAGS)
 libopencv_wrapper_plugin_la_LIBADD = $(OPENCV_LIBS)
-libopencv_wrapper_plugin_la_LDFLAGS = $(AM_LDFLAGS) $(video_filter_RPATH)
+libopencv_wrapper_plugin_la_LDFLAGS = $(AM_LDFLAGS) $(GC_SECTIONS_LDFLAGS) $(video_filter_RPATH)
 video_filter_PLUGINS += $(LTLIBopencv_wrapper)
 EXTRA_LTLIBRARIES += libopencv_wrapper_plugin.la
 
@@ -264,7 +271,7 @@ video_filter_PLUGINS += libblend_plugin.la
 libopencv_example_plugin_la_SOURCES = video_filter/opencv_example.cpp video_filter/filter_event_info.h
 libopencv_example_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) $(OPENCV_CFLAGS)
 libopencv_example_plugin_la_LIBADD = $(OPENCV_LIBS)
-libopencv_example_plugin_la_LDFLAGS = $(AM_LDFLAGS) $(video_filter_RPATH)
+libopencv_example_plugin_la_LDFLAGS = $(AM_LDFLAGS) $(GC_SECTIONS_LDFLAGS) $(video_filter_RPATH)
 video_filter_PLUGINS += $(LTLIBopencv_example)
 EXTRA_LTLIBRARIES += libopencv_example_plugin.la
 

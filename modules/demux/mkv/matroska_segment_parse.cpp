@@ -279,7 +279,7 @@ void matroska_segment_c::ParseTrackEntry( const KaxTrackEntry *m )
     {
         MKV_SWITCH_INIT();
 
-        static void debug (MetaDataCapture const& vars, char const * fmt, ...)
+        static void debug (MetaDataCapture const& vars, char const * fmt, ...) VLC_FORMAT( 2, 3 )
         {
             va_list args; va_start( args, fmt );
             MkvTree_va( *vars.p_demuxer, vars.level, fmt, args);
@@ -494,6 +494,7 @@ void matroska_segment_c::ParseTrackEntry( const KaxTrackEntry *m )
         }
         E_CASE( KaxContentCompSettings, kccs )
         {
+            debug( vars, "Compression Settings" );
             delete vars.tk->p_compression_data;
             vars.tk->p_compression_data = new KaxContentCompSettings( kccs );
         }
@@ -789,15 +790,14 @@ void matroska_segment_c::ParseTrackEntry( const KaxTrackEntry *m )
 #if LIBMATROSKA_VERSION >= 0x010405
         E_CASE( KaxVideoColour, colours)
         {
-            ONLY_FMT(VIDEO);
             debug( vars, "Video Colors");
             if (vars.tk->fmt.i_cat != VIDEO_ES ) {
                 msg_Err( vars.p_demuxer, "Video colors elements not allowed for this track" );
-            } else {
+                return;
+            }
             vars.level += 1;
             dispatcher.iterate (colours.begin (), colours.end (), &vars );
             vars.level -= 1;
-            }
         }
         E_CASE( KaxVideoColourRange, range )
         {
@@ -889,7 +889,7 @@ void matroska_segment_c::ParseTrackEntry( const KaxTrackEntry *m )
             if (vars.tk->fmt.video.primaries == COLOR_PRIMARIES_UNDEF)
                 debug( vars, "Unsupported Colour Primaries=%d", static_cast<uint8_t>(primaries) );
             else if (name == nullptr)
-                debug( vars, "Colour Primaries=%s", static_cast<uint8_t>(primaries) );
+                debug( vars, "Colour Primaries=%" PRIu8, static_cast<uint8_t>(primaries) );
             else
                 debug( vars, "Colour Primaries=%s", name );
         }
@@ -974,15 +974,14 @@ void matroska_segment_c::ParseTrackEntry( const KaxTrackEntry *m )
         }
         E_CASE( KaxVideoColourMasterMeta, mastering )
         {
-            ONLY_FMT(VIDEO);
             debug( vars, "Video Mastering Metadata");
             if (vars.tk->fmt.i_cat != VIDEO_ES ) {
                 msg_Err( vars.p_demuxer, "Video metadata elements not allowed for this track" );
-            } else {
+                return;
+            }
             vars.level += 1;
             dispatcher.iterate (mastering.begin (), mastering.end (), &vars );
             vars.level -= 1;
-            }
         }
         E_CASE( KaxVideoLuminanceMax, maxLum )
         {
@@ -1218,7 +1217,7 @@ void matroska_segment_c::ParseInfo( KaxInfo *info )
     {
         MKV_SWITCH_INIT();
 
-        static void debug (InfoHandlerPayload& vars, char const * fmt, ...)
+        static void debug (InfoHandlerPayload& vars, char const * fmt, ...) VLC_FORMAT( 2, 3 )
         {
             va_list args; va_start( args, fmt );
             MkvTree_va( *vars.p_demuxer, 2, fmt, args);
@@ -1382,7 +1381,7 @@ void matroska_segment_c::ParseChapterAtom( int i_level, KaxChapterAtom *ca, chap
     {
         MKV_SWITCH_INIT();
 
-        static void debug (ChapterPayload const& vars, char const * fmt, ...)
+        static void debug (ChapterPayload const& vars, char const * fmt, ...) VLC_FORMAT( 2, 3 )
         {
             va_list args; va_start( args, fmt );
             MkvTree_va( *vars.p_demuxer, vars.level, fmt, args);

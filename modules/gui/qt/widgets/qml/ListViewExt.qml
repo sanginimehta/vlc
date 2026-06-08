@@ -30,9 +30,8 @@ ListView {
 
     // Properties
 
-    property ListSelectionModel selectionModel: ListSelectionModel {
-        model: root.model
-    }
+    // Optional
+    property ListSelectionModel selectionModel
 
     // Optional property for drop indicator placement and auto scroll feature:
     property var itemContainsDrag: undefined
@@ -351,6 +350,16 @@ ListView {
 
     removeDisplaced: moveDisplaced
 
+    function _useClipRectForEventDeliveryWorkaround() {
+        if (!root.clip) {
+            // The following flag makes sure that the event delivery agent
+            // does not deliver the input events to the children of the
+            // content item that are outside of the viewport, without
+            // clipping the content with a clip node:
+            MainCtx.setItemFlag(root, Item.ItemClipsChildrenToShape)
+        }
+    }
+
     // Events
 
     Component.onCompleted: {
@@ -359,6 +368,9 @@ ListView {
         // feature for non-touch cases, so disable it here and enable
         // it if touch is detected through the hover handler:
         MainCtx.setFiltersChildMouseEvents(root, false)
+
+        clipChanged.connect(root, root._useClipRectForEventDeliveryWorkaround)
+        root._useClipRectForEventDeliveryWorkaround()
     }
 
     HoverHandler {
@@ -486,42 +498,59 @@ ListView {
     }
 
     Keys.onPressed: (event) => {
-        let newIndex = -1
+        let newIndex = currentIndex
 
-        if (orientation === ListView.Vertical)
-        {
-            if ( KeyHelper.matchDown(event) ) {
-                if (currentIndex !== count - 1 )
-                    newIndex = currentIndex + 1
-                else if ( root.keyNavigationWraps )
-                    newIndex = 0
-            } else if ( KeyHelper.matchPageDown(event) ) {
-                newIndex = Math.min(count - 1, currentIndex + 10)
-            } else if ( KeyHelper.matchUp(event) ) {
-                if ( currentIndex !== 0 )
-                    newIndex = currentIndex - 1
-                else if ( root.keyNavigationWraps )
-                    newIndex = count - 1
-            } else if ( KeyHelper.matchPageUp(event) ) {
-                newIndex = Math.max(0, currentIndex - 10)
+        let target = undefined
+        let suppressPageModifier = false
+
+        while (target === undefined || !target.visible || !target.enabled) {
+            if (orientation === ListView.Vertical) {
+                if ( suppressPageModifier || KeyHelper.matchDown(event) ) {
+                    if (currentIndex !== count - 1 )
+                        newIndex += 1
+                    else if ( root.keyNavigationWraps )
+                        newIndex = 0
+                } else if ( !suppressPageModifier && KeyHelper.matchPageDown(event) ) {
+                    newIndex = Math.min(count - 1, newIndex + 10)
+                } else if ( suppressPageModifier || KeyHelper.matchUp(event) ) {
+                    if ( newIndex !== 0 )
+                        newIndex -= 1
+                    else if ( root.keyNavigationWraps )
+                        newIndex = count - 1
+                } else if ( !suppressPageModifier && KeyHelper.matchPageUp(event) ) {
+                    newIndex = Math.max(0, newIndex - 10)
+                }
+            } else {
+                if ( suppressPageModifier || KeyHelper.matchRight(event) ) {
+                    if (newIndex !== count - 1 )
+                        newIndex += 1
+                    else if ( root.keyNavigationWraps )
+                        newIndex = 0
+                }
+                else if ( !suppressPageModifier && KeyHelper.matchPageDown(event) ) {
+                    newIndex = Math.min(count - 1, newIndex + 10)
+                } else if ( suppressPageModifier || KeyHelper.matchLeft(event) ) {
+                    if ( newIndex !== 0 )
+                        newIndex -= 1
+                    else if ( root.keyNavigationWraps )
+                        newIndex = count - 1
+                } else if ( !suppressPageModifier && KeyHelper.matchPageUp(event) ) {
+                    newIndex = Math.max(0, newIndex - 10)
+                }
             }
-        }else{
-            if ( KeyHelper.matchRight(event) ) {
-                if (currentIndex !== count - 1 )
-                    newIndex = currentIndex + 1
-                else if ( root.keyNavigationWraps )
-                    newIndex = 0
+
+            const newTarget = root.itemAtIndex(newIndex)
+
+            if (newTarget === null || newTarget === target) {
+                root.Navigation.defaultKeyAction(event)
+                return
+            } else if (!newTarget.visible || !newTarget.enabled) {
+                if (KeyHelper.matchPageDown(event) || KeyHelper.matchPageUp(event)) {
+                    suppressPageModifier = true
+                }
             }
-            else if ( KeyHelper.matchPageDown(event) ) {
-                newIndex = Math.min(count - 1, currentIndex + 10)
-            } else if ( KeyHelper.matchLeft(event) ) {
-                if ( currentIndex !== 0 )
-                    newIndex = currentIndex - 1
-                else if ( root.keyNavigationWraps )
-                    newIndex = count - 1
-            } else if ( KeyHelper.matchPageUp(event) ) {
-                newIndex = Math.max(0, currentIndex - 10)
-            }
+
+            target = newTarget
         }
 
         if (event.matches(StandardKey.SelectAll)) {

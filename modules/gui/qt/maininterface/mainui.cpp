@@ -56,6 +56,9 @@
 #include "dialogs/help/aboutmodel.hpp"
 #include "dialogs/dialogs_provider.hpp"
 #include "dialogs/dialogs/dialogmodel.hpp"
+#ifdef UPDATE_CHECK
+#include "dialogs/help/help.hpp" // UpdateModel
+#endif
 #include "util/vlchotkeyconverter.hpp"
 
 #include "network/networkmediamodel.hpp"
@@ -237,6 +240,10 @@ void MainUI::registerQMLTypes()
         qmlRegisterUncreatableType<CSDButtonModel>(uri, versionMajor, versionMinor, "CSDButtonModel", "has CSD buttons and provides for communicating CSD events between UI and backend");
         qmlRegisterTypesAndRevisions<CSDMenu>( uri, versionMajor);
         qmlRegisterUncreatableType<NavigationAttached>( uri, versionMajor, versionMinor, "Navigation", "Navigation is only available via attached properties");
+#ifdef UPDATE_CHECK
+        qmlRegisterSingletonInstance<UpdateModel>( uri, versionMajor, versionMinor, "UpdateModel", m_mainCtx->getUpdateModel() );
+#endif
+
         qmlRegisterModule(uri, versionMajor, versionMinor);
         qmlProtectModule(uri, versionMajor);
     }
@@ -290,6 +297,7 @@ void MainUI::registerQMLTypes()
         qmlRegisterUncreatableType<ProgramListModel>(uri, versionMajor, versionMinor, "ProgramListModel", "available programs of a media" );
         assert(m_intf->p_mainPlayerController);
         qmlRegisterSingletonInstance<PlayerController>(uri, versionMajor, versionMinor, "Player", m_intf->p_mainPlayerController);
+        qmlRegisterType<PlayerHighResolutionTimeUpdater>(uri, versionMajor, versionMinor, "HighResolutionTimeUpdater");
 
         qmlRegisterType<QmlBookmarkMenu>( uri, versionMajor, versionMinor, "QmlBookmarkMenu" );
         qmlRegisterType<QmlProgramMenu>( uri, versionMajor, versionMinor, "QmlProgramMenu" );

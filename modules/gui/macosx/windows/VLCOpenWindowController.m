@@ -198,7 +198,7 @@ NSString *const VLCOpenTextFieldWasClicked = @"VLCOpenTextFieldWasClicked";
     [_okButton setTitle: _NS("Open")];
     [_cancelButton setTitle: _NS("Cancel")];
 
-    [_outputCheckbox setTitle:_NS("Stream output:")];
+    [_outputCheckbox setTitle:_NS("Stream output")];
     [_outputSettingsButton setTitle:_NS("Settings...")];
 
     _tabView.accessibilityLabel = _NS("Choose media input type");
@@ -270,12 +270,12 @@ NSString *const VLCOpenTextFieldWasClicked = @"VLCOpenTextFieldWasClicked";
     [_captureModePopup removeAllItems];
     [_captureModePopup addItemWithTitle: _NS("Input Devices")];
     [_captureModePopup addItemWithTitle: _NS("Screen")];
-    [_screenFPSLabel setStringValue: [NSString stringWithFormat:@"%@:",_NS("Frames per Second")]];
+    [_screenFPSLabel setStringValue: [NSString stringWithFormat:@"%@:",_NS("Frames per second")]];
     [_screenLabel setStringValue: [NSString stringWithFormat:@"%@:",_NS("Screen")]];
     [_screenLeftLabel setStringValue: [NSString stringWithFormat:@"%@:",_NS("Subscreen left")]];
     [_screenTopLabel setStringValue: [NSString stringWithFormat:@"%@:",_NS("Subscreen top")]];
-    [_screenWidthLabel setStringValue: [NSString stringWithFormat:@"%@:",_NS("Subscreen Width")]];
-    [_screenHeightLabel setStringValue: [NSString stringWithFormat:@"%@:",_NS("Subscreen Height")]];
+    [_screenWidthLabel setStringValue: [NSString stringWithFormat:@"%@:",_NS("Subscreen width")]];
+    [_screenHeightLabel setStringValue: [NSString stringWithFormat:@"%@:",_NS("Subscreen height")]];
     [_screenFollowMouseCheckbox setTitle: _NS("Follow the mouse")];
     [_screenqtkAudioCheckbox setTitle: _NS("Capture Audio")];
 }
@@ -317,7 +317,7 @@ NSString *const VLCOpenTextFieldWasClicked = @"VLCOpenTextFieldWasClicked";
 
 - (void)initSubtitlesPanelStrings
 {
-    [_fileSubCheckbox setTitle: _NS("Add Subtitle File:")];
+    [_fileSubCheckbox setTitle: _NS("Add subtitle file")];
     [_fileSubPathLabel setStringValue: _NS("Choose a file")];
     [_fileSubPathLabel setHidden: NO];
     [_fileSubPathTextField setStringValue: @""];

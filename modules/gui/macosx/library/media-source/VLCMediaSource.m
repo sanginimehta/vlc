@@ -115,7 +115,7 @@ static const char *const remoteBrowseDescription = "Remote Browse";
         }
         
         _p_mediaSource->description = localDevicesDescription;
-        _p_mediaSource->tree = calloc(1, sizeof(vlc_media_tree_t));
+        _p_mediaSource->tree = vlc_media_tree_New();
         
         if (_p_mediaSource->tree == NULL) {
             free(_p_mediaSource);
@@ -159,7 +159,7 @@ static const char *const remoteBrowseDescription = "Remote Browse";
         }
 
         _p_mediaSource->description = myFoldersDescription;
-        _p_mediaSource->tree = calloc(1, sizeof(vlc_media_tree_t));
+        _p_mediaSource->tree = vlc_media_tree_New();
 
         if (_p_mediaSource->tree == NULL) {
             free(_p_mediaSource);
@@ -234,7 +234,7 @@ static const char *const remoteBrowseDescription = "Remote Browse";
         if (isFileUrl) {
             _category = SD_CAT_MYCOMPUTER;
             _p_mediaSource->description = myFoldersDescription;
-            _p_mediaSource->tree = calloc(1, sizeof(vlc_media_tree_t));
+            _p_mediaSource->tree = vlc_media_tree_New();
 
             BOOL mrlTargetIsDirectory = NO;
             const BOOL mrlTargetExists = [NSFileManager.defaultManager
@@ -264,8 +264,9 @@ static const char *const remoteBrowseDescription = "Remote Browse";
                                                                isFileUrl ? ITEM_LOCAL : ITEM_NET);
 
         if (isFileUrl) {
-            input_item_node_t * const directoryNode = input_item_node_Create(directoryItem);
-            _p_mediaSource->tree->root = *directoryNode;
+            // vlc_media_tree_New already initialised root with empty children;
+            // just set the root item directly.
+            _p_mediaSource->tree->root.p_item = directoryItem;
         } else {
             input_item_node_t * const directoryNode = input_item_node_Create(directoryItem);
             input_item_node_AppendNode(&_p_mediaSource->tree->root, directoryNode);
@@ -289,16 +290,11 @@ static const char *const remoteBrowseDescription = "Remote Browse";
         if (_p_mediaSource->description == localDevicesDescription || _p_mediaSource->description == myFoldersDescription) {
             _p_mediaSource->description = NULL;
 
-            input_item_node_t **childrenNodes = _p_mediaSource->tree->root.pp_children;
-            if (childrenNodes) {
-                for (int i = 0; i <_p_mediaSource->tree->root.i_children; ++i) {
-                    input_item_node_t *childNode = childrenNodes[i];
-                    input_item_node_RemoveNode(&(_p_mediaSource->tree->root), childNode);
-                    input_item_node_Delete(childNode);
-                }
+            if (_p_mediaSource->tree->root.p_item != NULL) {
+                input_item_Release(_p_mediaSource->tree->root.p_item);
+                _p_mediaSource->tree->root.p_item = NULL;
             }
-
-            free(_p_mediaSource->tree);
+            vlc_media_tree_Release(_p_mediaSource->tree);
             free(_p_mediaSource);
             _p_mediaSource = NULL;
         } else if (_p_mediaSource->description == remoteBrowseDescription) {
@@ -329,10 +325,8 @@ static const char *const remoteBrowseDescription = "Remote Browse";
 
     if (inputNode.inputItem.inputType == ITEM_TYPE_DIRECTORY &&
         [inputNode.inputItem.MRL hasPrefix:@"file://"]) {
-        input_item_node_t *vlcInputNode = inputNode.vlcInputItemNode;
         NSURL *dirUrl = [NSURL URLWithString:inputNode.inputItem.MRL];
-
-        return [self generateChildNodesForDirectoryNode:vlcInputNode withUrl:dirUrl];
+        return [self generateChildNodesForDirectoryNode:inputNode withUrl:dirUrl];
     }
 
     vlc_media_tree_Preparse(_p_mediaSource->tree, _p_preparser,
@@ -431,10 +425,13 @@ static const char *const remoteBrowseDescription = "Remote Browse";
     });
 }
 
-- (NSError *)generateChildNodesForDirectoryNode:(input_item_node_t *)directoryNode
+- (NSError *)generateChildNodesForDirectoryNode:(VLCInputNode *)directoryInputNode
                                         withUrl:(NSURL *)directoryUrl
 {
-    NSParameterAssert(directoryNode != NULL && directoryUrl != nil);
+    NSParameterAssert(directoryInputNode != NULL && directoryUrl != nil);
+    [directoryInputNode clearChildrenCache];
+    input_item_node_t * const directoryNode = directoryInputNode.vlcInputItemNode;
+
     @synchronized (self) {
         if (self.willStartGeneratingChildNodesForNodeHandler) {
             self.willStartGeneratingChildNodesForNodeHandler(directoryNode);
@@ -459,6 +456,9 @@ static const char *const remoteBrowseDescription = "Remote Browse";
 
         if (error) {
             NSLog(@"Failed to get directories: %@.", error);
+            if (self.didFinishGeneratingChildNodesForNodeHandler) {
+                self.didFinishGeneratingChildNodesForNodeHandler(directoryNode);
+            }
             return error;
         }
 

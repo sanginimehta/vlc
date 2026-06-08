@@ -112,6 +112,8 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/extensions/NSIndexSet+VLCAdditions.m \
 	gui/macosx/extensions/NSMenu+VLCAdditions.h \
 	gui/macosx/extensions/NSMenu+VLCAdditions.m \
+	gui/macosx/extensions/NSMenuItem+VLCAdditions.h \
+	gui/macosx/extensions/NSMenuItem+VLCAdditions.m \
 	gui/macosx/extensions/NSScreen+VLCAdditions.h \
 	gui/macosx/extensions/NSScreen+VLCAdditions.m \
 	gui/macosx/extensions/NSString+Helpers.h \
@@ -146,6 +148,8 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/library/VLCLibraryAbstractMediaLibrarySegmentViewController.m \
 	gui/macosx/library/VLCLibraryAbstractSegmentViewController.h \
 	gui/macosx/library/VLCLibraryAbstractSegmentViewController.m \
+	gui/macosx/library/VLCLibraryAddToPlaylistMenuController.h \
+	gui/macosx/library/VLCLibraryAddToPlaylistMenuController.m \
 	gui/macosx/library/VLCLibraryCarouselViewItemView.h \
 	gui/macosx/library/VLCLibraryCarouselViewItemView.m \
 	gui/macosx/library/VLCLibraryCollectionView.h \
@@ -338,6 +342,8 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/main/macosx.m \
 	gui/macosx/menus/VLCMainMenu.h \
 	gui/macosx/menus/VLCMainMenu.m \
+	gui/macosx/menus/VLCRecentStreamsMenuController.h \
+	gui/macosx/menus/VLCRecentStreamsMenuController.m \
 	gui/macosx/menus/VLCStatusBarIcon.h \
 	gui/macosx/menus/VLCStatusBarIcon.m \
 	gui/macosx/menus/renderers/VLCRendererDiscovery.h \

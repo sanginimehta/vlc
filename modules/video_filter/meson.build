@@ -376,6 +376,14 @@ vlc_modules += {
     'link_with' : [deinterlacecommon_lib]
 }
 
+# gl blend
+vlc_modules += {
+    'name' : 'glblend',
+    'sources' : files('deinterlace/glblend.c'),
+    'dependencies' : [gl_common_dep, gl_vout_dep],
+    'enabled' : gl_vout_dep.found(),
+}
+
 # Postproc filter
 postproc_dep = dependency('libpostproc', required: get_option('postproc'))
 postproc_c_args = []
@@ -411,6 +419,7 @@ vlc_modules += {
     'name' : 'opencv_wrapper',
     'sources' : files('opencv_wrapper.cpp'),
     'dependencies' : [m_lib, opencv_dep],
+    'link_args' : gc_sections_linkargs,
     'enabled' : opencv_dep.found()
 }
 
@@ -418,6 +427,7 @@ vlc_modules += {
     'name' : 'opencv_example',
     'sources' : files('opencv_example.cpp'),
     'dependencies' : [m_lib, opencv_dep],
+    'link_args' : gc_sections_linkargs,
     'enabled' : opencv_dep.found()
 }
 
@@ -433,6 +443,7 @@ if opencv_dep.found() and sam3_dep.found()
             opencv_dep,
             sam3_dep,
         ],
-        'cpp_args' : [ '-fexceptions' ]
+        'cpp_args' : [ '-fexceptions' ],
+        'link_args' : gc_sections_linkargs
     }
 endif

@@ -62,6 +62,7 @@ MOVE = mv $(UNPACK_DIR) $@ && touch $@
 nasm-$(NASM_VERSION).tar.gz:
 	$(call download_pkg,$(NASM_URL),nasm)
 
+.getnasm: nasm-$(NASM_VERSION).tar.gz
 nasm: nasm-$(NASM_VERSION).tar.gz
 	$(UNPACK)
 	$(MOVE)
@@ -81,6 +82,7 @@ DISTCLEAN_PKG += nasm-$(NASM_VERSION).tar.gz
 cmake-$(CMAKE_VERSION).tar.gz:
 	$(call download_pkg,$(CMAKE_URL),cmake)
 
+.getcmake: cmake-$(CMAKE_VERSION).tar.gz
 cmake: cmake-$(CMAKE_VERSION).tar.gz
 	$(UNPACK)
 	$(MOVE)
@@ -99,7 +101,9 @@ DISTCLEAN_PKG += cmake-$(CMAKE_VERSION).tar.gz
 help2man-$(HELP2MAN_VERSION).tar.xz:
 	$(call download_pkg,$(HELP2MAN_URL),help2man)
 
-help2man: help2man-$(HELP2MAN_VERSION).tar.xz .tar
+help2man: .tar
+.gethelp2man: help2man-$(HELP2MAN_VERSION).tar.xz
+help2man: help2man-$(HELP2MAN_VERSION).tar.xz
 	$(UNPACK)
 	$(MOVE)
 
@@ -118,6 +122,7 @@ DISTCLEAN_PKG += help2man-$(HELP2MAN_VERSION).tar.xz
 libtool-$(LIBTOOL_VERSION).tar.gz:
 	$(call download_pkg,$(LIBTOOL_URL),libtool)
 
+.getlibtool: libtool-$(LIBTOOL_VERSION).tar.gz
 libtool: libtool-$(LIBTOOL_VERSION).tar.gz
 	$(UNPACK)
 	(cd $(UNPACK_DIR) && chmod u+w build-aux/ltmain.sh)
@@ -125,6 +130,8 @@ libtool: libtool-$(LIBTOOL_VERSION).tar.gz
 	$(APPLY) $(TOOLS)/libtool-2.5.4-clang-libs.patch
 	$(APPLY) $(TOOLS)/libtool-2.4.7-lpthread.patch
 	$(APPLY) $(TOOLS)/libtool-2.5.4-embed-bitcode.patch
+
+	$(APPLY) $(TOOLS)/libtool-2.5.4-unarchive-old-libraries.patch
 	$(MOVE)
 
 .buildlibtool: libtool .automake .help2man
@@ -145,6 +152,7 @@ CLEAN_FILE += .buildlibtool
 tar-$(TAR_VERSION).tar.bz2:
 	$(call download_pkg,$(TAR_URL),tar)
 
+.gettar: tar-$(TAR_VERSION).tar.bz2
 tar: tar-$(TAR_VERSION).tar.bz2
 	$(UNPACK)
 	$(MOVE)
@@ -164,6 +172,7 @@ CLEAN_FILE += .buildtar
 xz-$(XZ_VERSION).tar.bz2:
 	$(call download_pkg,$(XZ_URL),xz)
 
+.getxz: xz-$(XZ_VERSION).tar.bz2
 xz: xz-$(XZ_VERSION).tar.bz2
 	$(UNPACK)
 	$(MOVE)
@@ -189,6 +198,7 @@ config.sub: $(TOOLS)/config.sub-$(CONFIGSUB_VERSION)
 	# CONFIGSUB_URL=https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub;hb=$(CONFIGSUB_VERSION)
 	cp -f $< $@
 
+.getconfigguess:
 .buildconfigguess: config.guess config.sub
 	# install in a dummy autoconf so that VLC contribs pick it
 	install -d           "$(PREFIX)/share/autoconf-vlc/build-aux"
@@ -201,7 +211,9 @@ config.sub: $(TOOLS)/config.sub-$(CONFIGSUB_VERSION)
 autoconf-$(AUTOCONF_VERSION).tar.gz:
 	$(call download_pkg,$(AUTOCONF_URL),autoconf)
 
-autoconf: autoconf-$(AUTOCONF_VERSION).tar.gz .configguess
+autoconf: .configguess
+.getautoconf: autoconf-$(AUTOCONF_VERSION).tar.gz
+autoconf: autoconf-$(AUTOCONF_VERSION).tar.gz
 	$(UNPACK)
 	@-cp config.guess $(UNPACK_DIR)/build-aux
 	@-cp config.sub $(UNPACK_DIR)/build-aux
@@ -222,7 +234,9 @@ DISTCLEAN_PKG += autoconf-$(AUTOCONF_VERSION).tar.gz
 automake-$(AUTOMAKE_VERSION).tar.gz:
 	$(call download_pkg,$(AUTOMAKE_URL),automake)
 
-automake: automake-$(AUTOMAKE_VERSION).tar.gz .configguess
+automake: .configguess
+.getautomake: automake-$(AUTOMAKE_VERSION).tar.gz
+automake: automake-$(AUTOMAKE_VERSION).tar.gz
 	$(UNPACK)
 	$(APPLY) $(TOOLS)/automake-disable-documentation.patch
 	$(APPLY) $(TOOLS)/automake-clang.patch
@@ -246,6 +260,7 @@ DISTCLEAN_PKG += automake-$(AUTOMAKE_VERSION).tar.gz
 m4-$(M4_VERSION).tar.gz:
 	$(call download_pkg,$(M4_URL),m4)
 
+.getm4: m4-$(M4_VERSION).tar.gz
 m4: m4-$(M4_VERSION).tar.gz
 	$(UNPACK)
 	$(MOVE)
@@ -262,12 +277,13 @@ DISTCLEAN_PKG += m4-$(M4_VERSION).tar.gz
 
 # pkg-config
 
-pkg-config-$(PKGCFG_VERSION).tar.gz:
-	$(call download_pkg,$(PKGCFG_URL),pkgconfiglite)
+pkg-config-$(PKGCONFIG_VERSION).tar.gz:
+	$(call download_pkg,$(PKGCONFIG_URL),pkgconfiglite)
 
-pkgconfig: pkg-config-$(PKGCFG_VERSION).tar.gz
+.getpkgconfig: pkg-config-$(PKGCFG_VERSION).tar.gz
+pkgconfig: pkg-config-$(PKGCONFIG_VERSION).tar.gz
 	$(UNPACK)
-	mv pkg-config-lite-$(PKGCFG_VERSION) pkg-config-$(PKGCFG_VERSION)
+	mv pkg-config-lite-$(PKGCONFIG_VERSION) pkg-config-$(PKGCONFIG_VERSION)
 	$(APPLY) $(TOOLS)/pkg-config-stdc23-port.patch
 	$(MOVE)
 
@@ -279,13 +295,14 @@ pkgconfig: pkg-config-$(PKGCFG_VERSION).tar.gz
 
 CLEAN_FILE += .buildpkg-config
 CLEAN_PKG += pkgconfig
-DISTCLEAN_PKG += pkg-config-$(PKGCFG_VERSION).tar.gz
+DISTCLEAN_PKG += pkg-config-$(PKGCONFIG_VERSION).tar.gz
 
 # GNU sed
 
 sed-$(SED_VERSION).tar.bz2:
 	$(call download_pkg,$(SED_URL),sed)
 
+.getsed: sed-$(SED_VERSION).tar.bz2
 sed: sed-$(SED_VERSION).tar.bz2
 	$(UNPACK)
 	$(MOVE)
@@ -305,6 +322,7 @@ CLEAN_FILE += .buildsed
 apache-ant-$(ANT_VERSION).tar.bz2:
 	$(call download_pkg,$(ANT_URL),ant)
 
+.getant: apache-ant-$(ANT_VERSION).tar.bz2
 ant: apache-ant-$(ANT_VERSION).tar.bz2
 	$(UNPACK)
 	$(MOVE)
@@ -326,7 +344,9 @@ CLEAN_FILE += .buildant
 bison-$(BISON_VERSION).tar.xz:
 	$(call download_pkg,$(BISON_URL),bison)
 
-bison: bison-$(BISON_VERSION).tar.xz .tar
+bison: .tar
+.getbison: bison-$(BISON_VERSION).tar.xz
+bison: bison-$(BISON_VERSION).tar.xz
 	$(UNPACK)
 	$(MOVE)
 
@@ -347,6 +367,7 @@ CLEAN_FILE += .buildbison
 flex-$(FLEX_VERSION).tar.gz:
 	$(call download_pkg,$(FLEX_URL),flex)
 
+.getflex: flex-$(FLEX_VERSION).tar.gz
 flex: flex-$(FLEX_VERSION).tar.gz
 	$(UNPACK)
 	$(MOVE)
@@ -384,6 +405,7 @@ GETTEXT_CONF = \
 gettext-$(GETTEXT_VERSION).tar.gz:
 	$(call download_pkg,$(GETTEXT_URL),gettext)
 
+.getgettext: gettext-$(GETTEXT_VERSION).tar.gz
 gettext: gettext-$(GETTEXT_VERSION).tar.gz
 	$(UNPACK)
 	$(APPLY) $(TOOLS)/gettext-no-iconv.patch
@@ -406,6 +428,7 @@ CLEAN_FILE += .buildgettext
 meson-$(MESON_VERSION).tar.gz:
 	$(call download_pkg,$(MESON_URL),meson)
 
+.getmeson: meson-$(MESON_VERSION).tar.gz
 meson: meson-$(MESON_VERSION).tar.gz
 	$(UNPACK)
 	$(MOVE)
@@ -428,6 +451,7 @@ ninja-$(NINJA_VERSION).tar.gz:
 	$(call download_pkg,$(NINJA_URL),ninja)
 
 ninja: UNPACK_DIR=ninja-$(NINJA_BUILD_NAME)
+.getninja: ninja-$(NINJA_VERSION).tar.gz
 ninja: ninja-$(NINJA_VERSION).tar.gz
 	$(UNPACK)
 	$(APPLY) $(TOOLS)/ninja-1.11.1-replace-pipes-quote-with-shlex-quote.patch
@@ -448,6 +472,7 @@ CLEAN_FILE += .buildninja
 gperf-$(GPERF_VERSION).tar.gz:
 	$(call download_pkg,$(GPERF_URL),gperf)
 
+.getgperf: gperf-$(GPERF_VERSION).tar.gz
 gperf: gperf-$(GPERF_VERSION).tar.gz
 	$(UNPACK)
 	$(MOVE)

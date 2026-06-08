@@ -66,6 +66,10 @@
     [self setupPlayQueueTitle];
     [self setupCounterLabel];
 
+    _topInternalConstraint =
+        [self.viewSelector.topAnchor constraintEqualToAnchor:self.view.topAnchor
+                                                    constant:VLCLibraryUIUnits.libraryWindowContentSafeTopInset + VLCLibraryUIUnits.smallSpacing];
+
     self.mainVideoModeEnabled = NO;
 
     _playQueueSidebarViewController =
@@ -103,9 +107,10 @@
     self.playQueueHeaderLabel.textColor = NSColor.headerTextColor;
 
     [self.view addSubview:self.playQueueHeaderLabel];
+
     _playQueueHeaderTopConstraint = 
         [self.playQueueHeaderLabel.topAnchor constraintEqualToAnchor:self.view.topAnchor
-                                                            constant:VLCLibraryUIUnits.smallSpacing];
+                                                            constant:VLCLibraryUIUnits.libraryWindowContentSafeTopInset + VLCLibraryUIUnits.smallSpacing];
     [NSLayoutConstraint activateConstraints:@[
         self.playQueueHeaderTopConstraint,
         [self.playQueueHeaderLabel.bottomAnchor constraintEqualToAnchor:self.targetView.topAnchor
@@ -251,11 +256,8 @@
 
 - (void)updateTopConstraints
 {
-    CGFloat internalTopConstraintConstant = VLCLibraryUIUnits.smallSpacing;
-    if (!self.mainVideoModeEnabled && self.libraryWindow.styleMask & NSWindowStyleMaskFullSizeContentView) {
-        // Compensate for full content view window's titlebar height, prevent top being cut off
-        internalTopConstraintConstant += self.libraryWindow.titlebarHeight;
-    }
+    const CGFloat internalTopConstraintConstant =
+        VLCLibraryUIUnits.libraryWindowContentSafeTopInset + VLCLibraryUIUnits.smallSpacing;
     self.topInternalConstraint.constant = internalTopConstraintConstant;
     self.playQueueHeaderTopConstraint.constant = internalTopConstraintConstant;
 }

@@ -36,7 +36,9 @@ FocusScope {
     property bool hasMiniPlayer: miniPlayer.visible
 
     // NOTE: The main view must be above the indexing bar and the mini player.
-    property real displayMargin: (height - miniPlayer.y) + (loaderProgress.active ? loaderProgress.height : 0)
+    property real displayMargin: (height - miniPlayer.y) +
+                                 (loaderProgress.active ? loaderProgress.height : 0) +
+                                 (loaderUpdatePane.active ? loaderUpdatePane.height : 0)
 
     //MainDisplay behave as a PageLoader
     property alias pagePrefix: stackView.pagePrefix
@@ -286,7 +288,7 @@ FocusScope {
 
                 layer.enabled: MainCtx.backdropBlurRequested() &&
                                (GraphicsInfo.shaderType === GraphicsInfo.RhiShader) &&
-                               (miniPlayer.visible || !!loaderProgress.item?.visible)
+                               (miniPlayer.visible || !!loaderProgress.item?.visible || !!loaderUpdatePane.item?.visible)
 
                 // Blurring requires to access neighbour pixels, thus the source texture should be bigger than
                 // the effect so that the effect have access to the neighbor pixels for the pixels near the
@@ -305,8 +307,9 @@ FocusScope {
                 // need to use background coloring. It is currently a todo to further reduce video memory
                 // consumption by covering the effect for only the area of interest, currently the blur
                 // effect does not support having an extension area for postprocessing.
-                layer.sourceRect: Qt.rect(0, 0,
-                                          Helpers.alignUp(Math.min(stackView.width + edgeExtension, stackViewParent.width), alignNumber),
+                layer.sourceRect: Qt.rect(stackView.x - edgeExtension,
+                                          0,
+                                          Helpers.alignUp(stackView.width + (2 * edgeExtension), alignNumber),
                                           Helpers.alignUp(height + edgeExtension, alignNumber))
 
                 property real eDPR: MainCtx.effectiveDevicePixelRatio(Window.window) || 1.0
@@ -321,13 +324,23 @@ FocusScope {
                 }
 
                 Rectangle {
-                    // Extension of parent rectangle for the bottom extension.
-                    anchors.top: parent.bottom
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: stackViewParent.edgeExtension
-                    visible: stackViewParent.layer.enabled && (height > 0)
-                    color: parent.color
+                    // Extension of parent rectangle for edge and fractional scale alignment extension.
+                    anchors.fill: parent
+                    anchors.margins: -(stackViewParent.edgeExtension + fractionalScaleExtensionSize)
+
+                    // With fractional scale, if we align up the layer size to make sure the size is
+                    // an integer, we also need to extend here because the background must cover the
+                    // extension area. 8 should be enough for the fractions that we care (.25, .5, .75).
+                    // Note that the background extension here does not consume additional video memory.
+                    readonly property real fractionalScaleExtensionSize: (stackViewParent.alignNumber > 1 ? 8.0 : 0.0)
+
+                    visible: stackViewParent.layer.enabled && (height > 0 && width > 0)
+                    // We can't simply adjust the color because the color might not be opaque,
+                    // so we use border instead. Note that border is always placed inside the
+                    // rectangle:
+                    border.width: -anchors.margins
+                    border.color: parent.color
+                    color: "transparent"
                 }
 
                 layer.effect: Widgets.PartialEffect {
@@ -341,17 +354,18 @@ FocusScope {
                     // for the source visual here. The effect rect exceeds the boundaries of `PartialEffect` due to this (see
                     // `effectRect`), which is not particularly nice, but there is not much we can do about that here without
                     // using `sourceVisualRect`, and saving video memory is considered more important:
-                    anchors.rightMargin: (stackViewParent.width - stackViewParent.layer.sourceRect.width)
+                    anchors.rightMargin: (stackViewParent.width - stackViewParent.layer.sourceRect.width - stackViewParent.layer.sourceRect.x)
+                    anchors.leftMargin: stackViewParent.layer.sourceRect.x
 
                     blending: stackViewParent.color.a < (1.0 - Number.EPSILON)
 
                     // Each pass of the blur effect also suffers from the border neighbour pixel issue mentioned
                     // above, making all the borders problematic, to a less considerable extent. For that reason,
                     // we extend both the top and the bottom edges and use viewport to prevent overdraw:
-                    effectRect: Qt.rect(0,
+                    effectRect: Qt.rect(-stackView.x,
                                         stackView.height - stackViewParent.edgeExtension,
-                                        stackViewParent.width,
-                                        loaderProgress.height + miniPlayer.height + 2 * stackViewParent.edgeExtension)
+                                        stackViewParent.width + 2 * stackViewParent.edgeExtension,
+                                        loaderProgress.height + loaderUpdatePane.height + miniPlayer.height + 2 * stackViewParent.edgeExtension)
 
                     // WARNING: We are not using `sourceVisualRect` because it is not trivial to guarantee that
                     //          the visual (`ShaderEffect`) scene graph sizing and sub-texturing are synchronized.
@@ -374,14 +388,21 @@ FocusScope {
 
                         // Prevent overdraw (the extension margin should not be painted).
                         // This also saves video memory compared to solely using visual rect.
-                        viewportRect: Qt.rect(0,
+                        // Note that viewport rect does not cover edge extension in y-axis
+                        // but covers edge extension in x-axis because we don't want to
+                        // have artifacts with regard to clamp-to-edge texture extension
+                        // in x-axis (relevant with delegate background coloring in list
+                        // view mode). Since we don't do texture extension in y-axis, we
+                        // don't need to cover the edge extension in y-axis, which allows
+                        // us to save some video memory (as opposed to `visualRect`).
+                        viewportRect: Qt.rect(stackView.x,
                                               stackViewParent.edgeExtension,
-                                              Math.min(stackView.width + stackViewParent.edgeExtension, stackViewParent.width),
+                                              stackView.width + (2 * stackViewParent.edgeExtension),
                                               height - (2 * stackViewParent.edgeExtension))
 
-                        visualRect: (stackView.width < stackViewParent.width) ? Qt.rect(viewportRect.x,
+                        visualRect: (stackView.width < stackViewParent.width) ? Qt.rect(stackViewParent.edgeExtension,
                                                                                         viewportRect.y,
-                                                                                        width,
+                                                                                        width - (2 * stackViewParent.edgeExtension),
                                                                                         viewportRect.height)
                                                                               : Qt.rect(0, 0, 0, 0)
                     }
@@ -423,7 +444,7 @@ FocusScope {
                     Navigation.parentItem: mainColumn
                     Navigation.upItem: sourcesBanner
                     Navigation.rightItem: playlistLoader
-                    Navigation.downItem:  miniPlayer.visible ? miniPlayer : null
+                    Navigation.downItem: loaderUpdatePane
                 }
 
                 Rectangle {
@@ -525,7 +546,7 @@ FocusScope {
 
                     Navigation.parentItem: mainColumn
                     Navigation.upItem: sourcesBanner
-                    Navigation.downItem: miniPlayer.visible ? miniPlayer : null
+                    Navigation.downItem: loaderUpdatePane
 
                     Navigation.leftAction: function() {
                         stackView.currentItem.setCurrentItemFocus(Qt.TabFocusReason);
@@ -601,6 +622,78 @@ FocusScope {
         }
     }
 
+    Loader {
+        id: loaderUpdatePane
+
+        // WARNING: Object name is used from C++ side to acknowledge the modern update pane is loaded,
+        //          if C++ side does not get this acknowledgement, the old update dialog is shown as
+        //          fallback.
+        objectName: "updatePaneLoader"
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: loaderProgress.top
+
+        active: !!UpdateModel && (shouldShow || height > 0.0)
+
+        focus: !!item
+
+        readonly property bool shouldShow: !!UpdateModel && (UpdateModel.updateStatus !== UpdateModel.Unchecked)
+
+        // This property can be used to enable/disable the animation:
+        property alias toggleAnimation: heightBehavior.enabled
+
+        function dismiss() {
+            height = 0.0
+        }
+
+        onShouldShowChanged: {
+            if (shouldShow)
+                height = Qt.binding(() => { return implicitHeight })
+        }
+
+        onActiveChanged: {
+            console.assert(!!UpdateModel)
+            if (!active)
+                UpdateModel.resetStatus()
+        }
+
+        clip: (height < implicitHeight)
+
+        Behavior on height {
+            id: heightBehavior
+
+            NumberAnimation {
+                easing.type: Easing.InOutSine
+                duration: VLCStyle.duration_long
+            }
+        }
+
+        source: "qrc:///qt/qml/VLC/MainInterface/UpdatePane.qml"
+
+        Navigation.parentItem: mainColumn
+        Navigation.upItem: mainRow
+        Navigation.downItem: miniPlayer
+
+        onLoaded: {            
+            item.background.visible = Qt.binding(function() { return !stackViewParent.layer.enabled })
+
+            item.leftPadding = Qt.binding(function() { return VLCStyle.margin_large + VLCStyle.applicationHorizontalMargin })
+            item.rightPadding = Qt.binding(function() { return VLCStyle.margin_large + VLCStyle.applicationHorizontalMargin })
+            item.bottomPadding = Qt.binding(function() { return VLCStyle.margin_small + ((miniPlayer.visible || loaderProgress.visible) ? 0
+                                                                                                                                        : VLCStyle.applicationVerticalMargin) })
+
+            item.dismissRequested.connect(loaderUpdatePane, loaderUpdatePane.dismiss)
+
+            // We have height animation here, we don't want animation inside the item in addition to that:
+            item.animations = Qt.binding(function() { return !loaderUpdatePane.toggleAnimation })
+
+            item.Navigation.parentItem = loaderUpdatePane
+
+            item.focus = true // Loader itself is a focus scope, so we need this
+        }
+    }
+
 
     Loader {
         id: loaderProgress
@@ -613,7 +706,7 @@ FocusScope {
 
         height: active ? implicitHeight : 0
 
-        source: "qrc:///qt/qml/VLC/Widgets/ScanProgressBar.qml"
+        source: "qrc:///qt/qml/VLC/MediaLibrary/ScanProgressBar.qml"
 
         onLoaded: {
             item.background.visible = Qt.binding(function() { return !stackViewParent.layer.enabled })
@@ -699,7 +792,7 @@ FocusScope {
         background.visible: !stackViewParent.layer.enabled
 
         Navigation.parentItem: mainColumn
-        Navigation.upItem: mainRow
+        Navigation.upItem: loaderUpdatePane
         Navigation.cancelItem:sourcesBanner
         onVisibleChanged: {
             if (!visible && miniPlayer.activeFocus)

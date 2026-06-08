@@ -135,6 +135,24 @@ MainCtx::MainCtx(qt_intf_t *_p_intf)
     : p_intf(_p_intf)
     , m_csdButtonModel {std::make_unique<CSDButtonModel>(this, this)}
 {
+    // If `playlist-autostart` is set, and there are initial files
+    // we don't bother loading main display just to unload it
+    // immediately after. Instead, we directly load the player
+    // page:
+    if (var_InheritBool(p_intf, "playlist-autostart"))
+    {
+        // We can not use `vlc_playlist_GetCurrentIndex()`, because
+        // playlist starts playing after the interface is added.
+        // We also can not use the playlist controller because it
+        // is not updated yet.
+        vlc_playlist_locker lock(p_intf->p_playlist);
+
+        if (vlc_playlist_Count(p_intf->p_playlist) > 0)
+        {
+            m_mainInterfaceModes |= MAININTERFACE_MODE_PLAYER;
+        }
+    }
+
     /**
      *  Configuration and settings
      *  Pre-building of interface
@@ -275,30 +293,15 @@ MainCtx::MainCtx(qt_intf_t *_p_intf)
             getSettings()->value( "updatedate" ).toDate().addDays( interval ) )
         {
             /* check for update at startup */
-            m_updateModel = std::make_unique<UpdateModel>(p_intf);
-            connect(m_updateModel.get(), &UpdateModel::updateStatusChanged, this, [this](){
-                switch (m_updateModel->updateStatus())
-                {
-                case UpdateModel::Checking:
-                case UpdateModel::Unchecked:
-                    break;
-                case UpdateModel::NeedUpdate:
-                    qWarning() << "Need Udpate";
-                    THEDP->updateDialog();
-                    [[fallthrough]];
-                case UpdateModel::UpToDate:
-                case UpdateModel::CheckFailed:
-                    disconnect(m_updateModel.get(), nullptr, this, nullptr);
-                    break;
-                }
-            });
-            m_updateModel->checkUpdate();
+            getUpdateModel()->checkUpdate();
             getSettings()->setValue( "updatedate", QDate::currentDate() );
         }
     }
 #endif
 
     m_threadRunner = new ThreadRunner();
+
+    m_initialEffectiveMainInterfaceMode = getEffectiveMainInterfaceMode();
 }
 
 MainCtx::~MainCtx()
@@ -1211,7 +1214,51 @@ void MainCtx::setArtistAlbumsWidthFactor(double newArtistAlbumsWidthFactor)
 UpdateModel* MainCtx::getUpdateModel() const
 {
     if (!m_updateModel)
+    {
         m_updateModel = std::make_unique<UpdateModel>(p_intf);
+
+        connect(m_updateModel.get(), &UpdateModel::updateStatusChanged, this, [this](){
+            switch (m_updateModel->updateStatus())
+            {
+            case UpdateModel::NeedUpdate:
+                qWarning() << "Need update";
+
+                // No-op, modern update pane opens itself automatically when status changes.
+                // However, the old update dialog is used as fallback in case for any reason
+                // the modern pane is not available.
+
+                {
+                    // Fallback:
+
+                    if (Q_LIKELY(p_intf &&
+                                 p_intf->p_compositor &&
+                                 p_intf->p_compositor->quickWindow() &&
+                                 p_intf->p_compositor->quickWindow()->contentItem()))
+                    {
+                        const auto target = p_intf->p_compositor->quickWindow()->contentItem();
+                        QMetaObject::invokeMethod(target, [target]() {
+                            const auto updatePaneLoader = target->findChild<QQuickItem*>(QStringLiteral("updatePaneLoader"));
+                            if (!updatePaneLoader || (updatePaneLoader->property("status").toInt() != 1 /* Loader.Ready */))
+                            {
+                                qDebug("No acknowledgement from the modern update loader, falling back to the old update dialog.");
+                                THEDP->updateDialog();
+                            }
+                        }, Qt::QueuedConnection);
+                    }
+                    else
+                    {
+                        qDebug("Compositor is not available, falling back to the old update dialog.");
+                        THEDP->updateDialog();
+                    }
+                }
+
+                break;
+            default:
+                break;
+            }
+        });
+    }
+
     return m_updateModel.get();
 }
 #endif

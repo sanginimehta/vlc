@@ -587,7 +587,7 @@ referenceSizeForHeaderInSection:(NSInteger)section
     _collectionViewScrollView.scrollerInsets = scrollerInsets;
 
     _tableViewScrollView.automaticallyAdjustsContentInsets = NO;
-    _tableViewScrollView.contentInsets = NSEdgeInsetsMake(scrollViewsTopSpace + _tableViewScrollView.window.titlebarHeight, 0, scrollViewInsets.bottom, 0);
+    _tableViewScrollView.contentInsets = NSEdgeInsetsMake(scrollViewsTopSpace + VLCLibraryUIUnits.libraryWindowContentSafeTopInset, 0, scrollViewInsets.bottom, 0);
     _tableViewScrollView.scrollerInsets = NSEdgeInsetsMake(0, 0, -scrollViewInsets.bottom, 0);
 }
 
@@ -623,8 +623,20 @@ referenceSizeForHeaderInSection:(NSInteger)section
 
     VLCInputNodePathControlItem * const matchingItem = [self.pathControl.inputNodePathControlItems objectForKey:itemNodeMrl];
     if (matchingItem != nil) {
+        VLCInputNode * const currentNode = self.childDataSource.nodeToDisplay;
+        if (currentNode != nil &&
+            [matchingItem.inputNode.inputItem.MRL isEqualToString:currentNode.inputItem.MRL]) {
+            return;
+        }
+
+        // Jumping to an ancestor via the path control is a navigation in its own
+        // right. Record it as a new state (with the trimmed breadcrumb) so that
+        // pressing back returns to the descendant we were previously viewing,
+        // rather than to the parent of the clicked item. The breadcrumb for each
+        // state is restored wholesale on back/forward, so the path stays correct.
         self.childDataSource.nodeToDisplay = matchingItem.inputNode;
         [self.pathControl clearPathControlItemsAheadOf:selectedItem];
+        [self.navigationStack appendCurrentLibraryState];
     } else {
         NSLog(@"Could not find matching item for clicked path item: %@", selectedItem);
     }

@@ -32,7 +32,7 @@ Item {
     // which results lower memory consumption:
     property alias backgroundColor: backgroundRect.color
 
-    property alias sourceItem: shaderEffectSource.sourceItem
+    property Item sourceItem
 
     property real beginningMargin
     property real endMargin
@@ -60,7 +60,40 @@ Item {
 
     readonly property bool effectCompatible: (GraphicsInfo.shaderType === GraphicsInfo.RhiShader)
 
-    readonly property bool implicitClipping: shaderEffectSource.visible
+    readonly property bool implicitClipping: !!_shaderEffect?.visible
+
+    property bool useLayering: effectCompatible && (enforceClipping || backgroundColor.a < 1.0)
+
+    // Sometimes `Item::clip` may not be suitable to use with item views,
+    // this includes, but not limited to, when display margins are set.
+    // In this case, `enforceClipping` may be set. Note that setting this
+    // property does not guarantee that clipping is done, it is advised
+    // to check `implicitClipping` to know if clipping is actually done.
+    // NOTE: `useLayering` must be set for this to be respected, by
+    //       default it is set when `enforceClipping` is set.
+    // TODO: Get rid of this once we can adjust the clip rect directly
+    //       in QML (currently requires overriding `QQuickItem::clipRect()`).
+    property bool enforceClipping: false
+
+    property Item _shaderEffectSource
+    property Item _shaderEffect
+
+    onUseLayeringChanged: {
+        if (useLayering) {
+            // We create the items needed for layer once it is needed, and keep it.
+            // Note that, while we keep the items, the layer texture should still
+            // be released if `useLayer` becomes `false` after that (since we set
+            // `sourceItem` to `null` while `live` is set).
+
+            if (!_shaderEffectSource) {
+                _shaderEffectSource = shaderEffectSourceComponent.createObject(positionerParent)
+            }
+
+            if (!_shaderEffect) {
+                _shaderEffect = shaderEffectComponent.createObject(positionerParent)
+            }
+        }
+    }
 
     Rectangle {
         id: backgroundRect
@@ -73,7 +106,7 @@ Item {
 
         z: -100
 
-        visible: shaderEffectSource.visible && (color.a > 0.0)
+        visible: !!root._shaderEffectSource?.visible && (color.a > 0.0)
     }
 
     // Fading edge effect provider when background is opaque:
@@ -85,7 +118,7 @@ Item {
         implicitWidth: root.fadeSize
 
         // NOTE: `OpacityAnimator` updates the opacity once the animation finishes.
-        visible: (opacity > 0.0 || enabled) && (root.backgroundColor.a > (1.0 - Number.EPSILON))
+        visible: (opacity > 0.0 || enabled) && !root.useLayering
 
         opacity: enabled ? 1.0 : 0.0
 
@@ -134,78 +167,94 @@ Item {
         }
     }
 
-    FadingEdgeRectangleForOpaqueBackground {
-        anchors {
-            top: shaderEffectSource.top
-            left: shaderEffectSource.left
-
-            bottom: (root.orientation === Qt.Horizontal) ? shaderEffectSource.bottom : undefined
-            right: (root.orientation === Qt.Vertical) ? shaderEffectSource.right : undefined
-        }
-
-        enabled: root.enableBeginningFade
-        colorStop0: root.backgroundColor
-        colorStop1: "transparent"
-    }
-
-    FadingEdgeRectangleForOpaqueBackground {
-        anchors {
-            bottom: shaderEffectSource.bottom
-            right: shaderEffectSource.right
-
-            top: (root.orientation === Qt.Horizontal) ? shaderEffectSource.top : undefined
-            left: (root.orientation === Qt.Vertical) ? shaderEffectSource.left : undefined
-        }
-
-        enabled: root.enableEndFade
-        colorStop0: "transparent"
-        colorStop1: root.backgroundColor
-    }
-
-    // Fading edge effect provider when background is not opaque:
-    ShaderEffectSource {
-        id: shaderEffectSource
+    Item {
+        id: positionerParent
 
         anchors {
-            top: parent.top
-            left: parent.left
+            fill: parent
             leftMargin: (root.orientation === Qt.Horizontal ? -root.beginningMargin : 0)
+            rightMargin: (root.orientation === Qt.Horizontal ? -root.endMargin : 0)
             topMargin: (root.orientation === Qt.Vertical ? -root.beginningMargin : 0)
+            bottomMargin: (root.orientation === Qt.Vertical ? -root.endMargin : 0)
         }
 
-        property real eDPR: MainCtx.effectiveDevicePixelRatio(Window.window) || 1.0
-        readonly property int alignNumber: pixelAlignedForDPR ? Helpers.denominatorForFloat(eDPR) : 1
+        FadingEdgeRectangleForOpaqueBackground {
+            anchors {
+                top: parent.top
+                left: parent.left
 
-        Connections {
-            target: MainCtx
-
-            function onIntfDevicePixelRatioChanged() {
-                shaderEffectSource.eDPR = MainCtx.effectiveDevicePixelRatio(shaderEffectSource.Window.window) || 1.0
+                bottom: (root.orientation === Qt.Horizontal) ? parent.bottom : undefined
+                right: (root.orientation === Qt.Vertical) ? parent.right : undefined
             }
+
+            enabled: root.enableBeginningFade
+            colorStop0: root.backgroundColor
+            colorStop1: "transparent"
         }
 
-        implicitWidth: Helpers.alignUp((parent.width + (root.orientation === Qt.Horizontal ? (root.beginningMargin + root.endMargin) : 0)), alignNumber)
-        implicitHeight: Helpers.alignUp((parent.height + (root.orientation === Qt.Vertical ? (root.beginningMargin + root.endMargin) : 0)), alignNumber)
+        FadingEdgeRectangleForOpaqueBackground {
+            anchors {
+                bottom: parent.bottom
+                right: parent.right
 
-        sourceRect: Qt.rect(root.sourceX - (root.orientation === Qt.Horizontal ? root.beginningMargin : 0),
-                            root.sourceY - (root.orientation === Qt.Vertical ? root.beginningMargin : 0),
-                            width, // Texture width is (width * dpr)
-                            height) // Texture height is (height * dpr)
+                top: (root.orientation === Qt.Horizontal) ? parent.top : undefined
+                left: (root.orientation === Qt.Vertical) ? parent.left : undefined
+            }
 
-        // Make sure sourceItem is not rendered twice:
-        hideSource: visible
+            enabled: root.enableEndFade
+            colorStop0: "transparent"
+            colorStop1: root.backgroundColor
+        }
+    }
 
-        smooth: false
+    Component {
+        id: shaderEffectSourceComponent
 
-        visible: effectCompatible &&
-                 (root.backgroundColor.a < 1.0) &&
-                 ((root.enableBeginningFade || root.enableEndFade) ||
-                 ((shaderEffect) && (shaderEffect.beginningFadeSize > 0 || shaderEffect.endFadeSize > 0)))
+        // Fading edge effect provider when background is not opaque:
+        ShaderEffectSource {
+            id: shaderEffectSource
 
-        property ShaderEffect shaderEffect
+            anchors.top: parent.top
+            anchors.left: parent.left
 
-        layer.enabled: true
-        layer.effect: ShaderEffect {
+            property real eDPR: MainCtx.effectiveDevicePixelRatio(Window.window) || 1.0
+            readonly property int alignNumber: pixelAlignedForDPR ? Helpers.denominatorForFloat(eDPR) : 1
+
+            Connections {
+                target: MainCtx
+
+                function onIntfDevicePixelRatioChanged() {
+                    shaderEffectSource.eDPR = MainCtx.effectiveDevicePixelRatio(shaderEffectSource.Window.window) || 1.0
+                }
+            }
+
+            implicitWidth: Helpers.alignUp((parent.width + (root.orientation === Qt.Horizontal ? (root.beginningMargin + root.endMargin) : 0)), alignNumber)
+            implicitHeight: Helpers.alignUp((parent.height + (root.orientation === Qt.Vertical ? (root.beginningMargin + root.endMargin) : 0)), alignNumber)
+
+            // When `live` is set, Qt releases the layer when `sourceItem` becomes `null`. For that reason
+            // we do not need to set `parent` to null. The important thing is to get rid  of the layer
+            // texture, we don't need to care about getting rid of the texture provider. See
+            // `QQuickShaderEffectSource::updatePaintNode()` and `QSGRhiLayer::setItem()`.
+            sourceItem: root.useLayering ? root.sourceItem : null
+
+            sourceRect: Qt.rect(root.sourceX - (root.orientation === Qt.Horizontal ? root.beginningMargin : 0),
+                                root.sourceY - (root.orientation === Qt.Vertical ? root.beginningMargin : 0),
+                                width, // Texture width is (width * dpr)
+                                height) // Texture height is (height * dpr)
+
+            // Make sure sourceItem is not rendered twice:
+            hideSource: root._shaderEffect && (root._shaderEffect.visible && root._shaderEffect.source === this)
+
+            visible: false
+
+            smooth: false
+        }
+    }
+
+    Component {
+        id: shaderEffectComponent
+
+        ShaderEffect {
             // It makes sense to use the effect for only in the fading part.
             // However, it would complicate things in the QML side. As it
             // would require two additional items, as well as two more texture
@@ -215,12 +264,21 @@ Item {
 
             id: effect
 
+            anchors.fill: root._shaderEffectSource
+
+            readonly property Item source: root._shaderEffectSource
+
             readonly property bool vertical: (root.orientation === Qt.Vertical)
             readonly property real normalFadeSize: root.fadeSize / (vertical ? height : width)
 
             property real beginningFadeSize: root.enableBeginningFade ? normalFadeSize : 0
             property real endFadeSize: root.enableEndFade ? normalFadeSize : 0
             readonly property real endFadePos: 1.0 - endFadeSize
+
+            visible: root.useLayering &&
+                     (root.enforceClipping ||
+                      ((root.enableBeginningFade || root.enableEndFade) ||
+                       (beginningFadeSize > 0 || endFadeSize > 0)))
 
             onBeginningFadeSizeChanged: {
                 if (!beginningFadeBehavior.enabled) {
@@ -240,16 +298,6 @@ Item {
 
             function _enableEndFadeBehavior() {
                 endFadeBehavior.enabled = true
-            }
-
-            Component.onCompleted: {
-                console.assert(shaderEffectSource.shaderEffect === null)
-                shaderEffectSource.shaderEffect = this
-            }
-
-            Component.onDestruction: {
-                console.assert(shaderEffectSource.shaderEffect === this)
-                shaderEffectSource.shaderEffect = null
             }
 
             component FadeBehavior : Behavior {

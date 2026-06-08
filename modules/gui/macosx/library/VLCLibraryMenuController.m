@@ -23,9 +23,11 @@
 #import "VLCLibraryMenuController.h"
 
 #import "extensions/NSMenu+VLCAdditions.h"
+#import "extensions/NSMenuItem+VLCAdditions.h"
 #import "extensions/NSString+Helpers.h"
 
 #import "library/VLCInputItem.h"
+#import "library/VLCLibraryAddToPlaylistMenuController.h"
 #import "library/VLCLibraryController.h"
 #import "library/VLCLibraryModel.h"
 #import "library/VLCLibraryRepresentedItem.h"
@@ -50,8 +52,12 @@
     NSHashTable<NSMenuItem*> *_inputItemRequiringMenuItems;
     NSHashTable<NSMenuItem*> *_localInputItemRequiringMenuItems;
     NSHashTable<NSMenuItem*> *_folderInputItemRequiringMenuItems;
-    
+
     NSMenuItem *_deleteItem;
+    NSMenuItem *_removeFromPlaylistItem;
+
+    VLCLibraryAddToPlaylistMenuController *_addToPlaylistMenuController;
+    NSMenuItem *_addToPlaylistItem;
 }
 
 @property (readwrite) NSMenuItem *favoriteItem;
@@ -105,29 +111,51 @@
     _favoriteItem = [[NSMenuItem alloc] initWithTitle:_NS("Toggle Favorite") action:@selector(toggleFavorite:) keyEquivalent:@""];
     self.favoriteItem.target = self;
 
-    NSMenuItem *createPlaylistItem = [[NSMenuItem alloc] initWithTitle:_NS("Create Playlist from Selection") action:@selector(createPlaylistFromSelection:) keyEquivalent:@""];
-    createPlaylistItem.target = self;
+    _addToPlaylistMenuController = [[VLCLibraryAddToPlaylistMenuController alloc] init];
+    _addToPlaylistItem = [[NSMenuItem alloc] initWithTitle:_NS("Add to Playlist")
+                                                    action:nil
+                                             keyEquivalent:@""];
+    [_addToPlaylistItem setSubmenu:_addToPlaylistMenuController.addToPlaylistMenu];
+
+    _removeFromPlaylistItem = [[NSMenuItem alloc] initWithTitle:_NS("Remove from Playlist")
+                                                         action:@selector(removeFromPlaylist:)
+                                                  keyEquivalent:@""];
+    _removeFromPlaylistItem.target = self;
+
+    [playItem vlc_setActionImageWithSystemSymbolName:@"play.fill"];
+    [appendItem vlc_setActionImageWithSystemSymbolName:@"text.line.last.and.arrowtriangle.forward"];
+    [_addToPlaylistItem vlc_setActionImageWithSystemSymbolName:@"text.badge.plus"];
+    [_removeFromPlaylistItem vlc_setActionImageWithSystemSymbolName:@"minus.circle"];
+    [self.favoriteItem vlc_setActionImageWithSystemSymbolName:@"heart"];
+    [bookmarkItem vlc_setActionImageWithSystemSymbolName:@"bookmark"];
+    [addToLibraryItem vlc_setActionImageWithSystemSymbolName:@"plus.rectangle.on.folder"];
+    [revealItem vlc_setActionImageWithSystemSymbolName:@"folder"];
+    [_deleteItem vlc_setActionImageWithSystemSymbolName:@"trash"];
+    [markUnseenItem vlc_setActionImageWithSystemSymbolName:@"eye.slash"];
+    [informationItem vlc_setActionImageWithSystemSymbolName:@"info.circle"];
+    [addItem vlc_setActionImageWithSystemSymbolName:@"folder.badge.plus"];
 
     _libraryMenu = [[NSMenu alloc] initWithTitle:@""];
     [_libraryMenu addMenuItemsFromArray:@[
         playItem,
         appendItem,
-        createPlaylistItem,
+        _addToPlaylistItem,
         self.favoriteItem,
         bookmarkItem,
         addToLibraryItem,
         revealItem,
+        _removeFromPlaylistItem,
         _deleteItem,
         markUnseenItem,
         informationItem,
-        [NSMenuItem separatorItem], 
+        [NSMenuItem separatorItem],
         addItem
     ]];
 
     _mediaItemRequiringMenuItems = [NSHashTable weakObjectsHashTable];
     [_mediaItemRequiringMenuItems addObject:playItem];
     [_mediaItemRequiringMenuItems addObject:appendItem];
-    [_mediaItemRequiringMenuItems addObject:createPlaylistItem];
+    [_mediaItemRequiringMenuItems addObject:_addToPlaylistItem];
     [_mediaItemRequiringMenuItems addObject:self.favoriteItem];
     [_mediaItemRequiringMenuItems addObject:revealItem];
     [_mediaItemRequiringMenuItems addObject:_deleteItem];
@@ -162,11 +190,25 @@
     VLCLibraryModel * const libraryModel = VLCMain.sharedInstance.libraryController.libraryModel;
     NSArray<VLCMediaLibraryMediaItem *> * const recents = libraryModel.listOfRecentMedia;
 
+    _removeFromPlaylistItem.hidden = YES;
+
     if (self.representedItems != nil && self.representedItems.count > 0) {
         [self menuItems:_inputItemRequiringMenuItems setHidden:YES];
         [self menuItems:_localInputItemRequiringMenuItems setHidden:YES];
         [self menuItems:_folderInputItemRequiringMenuItems setHidden:YES];
         [self menuItems:_mediaItemRequiringMenuItems setHidden:NO];
+
+        BOOL allInPlaylist = YES;
+        for (VLCLibraryRepresentedItem * const item in self.representedItems) {
+            if (item.parentType != VLCMediaLibraryParentGroupTypePlaylist ||
+                ![item.item isKindOfClass:VLCMediaLibraryMediaItem.class] ||
+                item.parentItem == nil ||
+                item.positionInParent == NSNotFound) {
+                allInPlaylist = NO;
+                break;
+            }
+        }
+        _removeFromPlaylistItem.hidden = !allInPlaylist;
 
         BOOL anyNonRecent = NO;
         for (VLCLibraryRepresentedItem * const item in self.representedItems) {
@@ -188,6 +230,7 @@
         }
         self.favoriteItem.title = anyUnfavorited ? _NS("Add to Favorites") : _NS("Remove from Favorites");
         self.favoriteItem.action = anyUnfavorited ? @selector(addFavorite:) : @selector(removeFavorite:);
+        [self.favoriteItem vlc_setActionImageWithSystemSymbolName:(anyUnfavorited ? @"heart" : @"heart.slash")];
         
         // Update delete menu item title based on whether items are file-backed
         BOOL hasFileBacked = NO;
@@ -214,6 +257,7 @@
 
     } else if (_representedInputItems != nil && self.representedInputItems.count > 0) {
         [self menuItems:_mediaItemRequiringMenuItems setHidden:YES];
+        _removeFromPlaylistItem.hidden = YES;
         [self menuItems:_inputItemRequiringMenuItems setHidden:NO];
 
         BOOL anyStream = NO;
@@ -286,20 +330,27 @@
     }
 }
 
-- (void)createPlaylistFromSelection:(id)sender
+- (void)removeFromPlaylist:(id)sender
 {
-    if (self.representedItems == nil || self.representedItems.count == 0) {
+    if (self.representedItems.count == 0) {
         return;
     }
-    
-    NSMutableArray<VLCMediaLibraryMediaItem *> * const mediaItems = [NSMutableArray arrayWithCapacity:self.representedItems.count];
-    for (VLCLibraryRepresentedItem * const representedItem in self.representedItems) {
-        [mediaItems addObjectsFromArray:representedItem.item.mediaItems];
+
+    VLCMediaLibraryPlaylist * const playlist =
+        (VLCMediaLibraryPlaylist *)self.representedItems.firstObject.parentItem;
+    if (![playlist isKindOfClass:VLCMediaLibraryPlaylist.class]) {
+        return;
     }
-    
-    if (mediaItems.count > 0) {
-        [VLCMain.sharedInstance.libraryController showCreatePlaylistDialogForMediaItems:mediaItems];
+
+    NSMutableArray<NSNumber *> * const positions =
+        [NSMutableArray arrayWithCapacity:self.representedItems.count];
+    for (VLCLibraryRepresentedItem * const repItem in self.representedItems) {
+        if (repItem.positionInParent != NSNotFound) {
+            [positions addObject:@(repItem.positionInParent)];
+        }
     }
+
+    [playlist removeMediaItemsAtPositions:positions];
 }
 
 - (void)addMedia:(id)sender
@@ -439,6 +490,7 @@
 {
     _representedItems = items;
     _representedInputItems = nil;
+    _addToPlaylistMenuController.representedItems = items;
     [self updateMenuItems];
 }
 
@@ -446,6 +498,7 @@
 {
     _representedInputItems = representedInputItems;
     _representedItems = nil;
+    _addToPlaylistMenuController.representedItems = nil;
     [self updateMenuItems];
 }
 

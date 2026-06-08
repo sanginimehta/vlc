@@ -553,22 +553,22 @@ static int ProcessALACCookie( demux_t *p_demux, const uint8_t *p, uint64_t i_siz
         i_extra = i_size;
     }
 
+    free(p_sys->fmt.p_extra);
     p_sys->fmt.i_extra = i_extra;
-    p_sys->fmt.p_extra = malloc( i_extra );
+    p_sys->fmt.p_extra = i_extra == 0 ? NULL : malloc( i_extra );
 
-    if( !p_sys->fmt.p_extra )
+    if( i_extra && !p_sys->fmt.p_extra )
         return VLC_ENOMEM;
-
-    uint8_t *p_extra = ( uint8_t * )p_sys->fmt.p_extra;
 
     if( i_size == kALAC_NEW_KUKI_SIZE )
     {
+        uint8_t *p_extra = ( uint8_t * )p_sys->fmt.p_extra;
         SetDWBE( p_extra, 36 );
         memcpy( p_extra + 4, "alac", 4 );
         SetDWBE( p_extra + 8, 0 );
         memcpy( p_extra + 12, p, 24 );
     }
-    else
+    else if (i_size != 0)
     {
         memcpy( p_sys->fmt.p_extra, p, i_size );
     }
@@ -682,15 +682,18 @@ aac_kuki_finish:
         i_offset = 0;
     }
 
+    free(p_sys->fmt.p_extra);
     p_sys->fmt.i_extra = i_kuki_size;
-    p_sys->fmt.p_extra = malloc( i_kuki_size );
+    p_sys->fmt.p_extra = i_kuki_size == 0 ? NULL : malloc( i_kuki_size );
 
-    if( !p_sys->fmt.p_extra )
+    if( i_kuki_size && !p_sys->fmt.p_extra )
     {
         return VLC_ENOMEM;
     }
-
-    memcpy( p_sys->fmt.p_extra, p + i_offset, i_kuki_size );
+    if ( i_kuki_size )
+    {
+        memcpy( p_sys->fmt.p_extra, p + i_offset, i_kuki_size );
+    }
 
     return VLC_SUCCESS;
 }
@@ -724,14 +727,18 @@ static int ReadKukiChunk( demux_t *p_demux, uint64_t i_size )
     }
     else if( p_sys->fmt.i_codec != 0 )
     {
+        free(p_sys->fmt.p_extra);
         p_sys->fmt.i_extra = i_size;
-        p_sys->fmt.p_extra = malloc( i_size );
+        p_sys->fmt.p_extra = i_size == 0 ? NULL : malloc( i_size );
 
-        if( !p_sys->fmt.p_extra )
+        if( i_size && !p_sys->fmt.p_extra )
         {
             return VLC_ENOMEM;
         }
-        memcpy( p_sys->fmt.p_extra, p_peek, p_sys->fmt.i_extra );
+        if ( i_size != 0)
+        {
+            memcpy( p_sys->fmt.p_extra, p_peek, p_sys->fmt.i_extra );
+        }
     }
 
     return VLC_SUCCESS;

@@ -9,7 +9,7 @@ qt_include_dir = include_directories('.')
 qt_extra_deps = []
 qt_extra_flags = ['-DQT_STRICT_ITERATORS','-DQT_USE_QSTRINGBUILDER','-DQT_NO_CAST_TO_ASCII','-DQT_NO_CAST_FROM_BYTEARRAY']
 qt_cppargs = []
-qt_link_args = []
+qt_link_args = [gc_sections_linkargs]
 
 qt6_dep = dependency('qt6',
     # Note that Qt < 6.2.5 does not provide pc files!
@@ -186,6 +186,10 @@ if (x11_dep.found() and
         'maininterface/compositor_x11_uisurface.hpp',
         'maininterface/compositor_x11_utils.hpp',
     )
+endif
+
+if have_wayland and cpp.has_header('qpa/qplatformnativeinterface.h', dependencies: qt6_dep)
+    moc_headers += files('maininterface/compositor_wayland.hpp')
 endif
 
 qt_plugin_sources = files(
@@ -551,6 +555,12 @@ if (x11_dep.found() and
     )
 endif
 
+if have_wayland and cpp.has_header('qpa/qplatformnativeinterface.h', dependencies: qt6_dep)
+    qt_plugin_sources += files(
+        'maininterface/compositor_wayland.cpp',
+    )
+endif
+
 qrc_files = files('assets.qrc')
 if host_system == 'windows'
   qrc_files += files('windows.qrc')
@@ -602,6 +612,13 @@ qml_modules += {
     ),
 }
 
+qml_maininterface_extra_files = []
+
+if get_option('update-check').allowed() and gcrypt_dep.found()
+    qt_extra_flags += '-DUPDATE_CHECK'
+    qml_maininterface_extra_files += 'maininterface/qml/UpdatePane.qml'
+endif
+
 qml_modules += {
     'name' : 'VLC.MainInterface',
     'target' : 'maininterface',
@@ -611,7 +628,8 @@ qml_modules += {
         'maininterface/qml/MainInterface.qml',
         'maininterface/qml/MainViewLoader.qml',
         'maininterface/qml/MainDisplay.qml',
-        'maininterface/qml/NoMedialibHome.qml'
+        'maininterface/qml/NoMedialibHome.qml',
+        qml_maininterface_extra_files,
     ),
 }
 qml_modules += {
@@ -658,6 +676,7 @@ qml_modules += {
         'medialibrary/qml/MLContextMenu.qml',
         'medialibrary/qml/MLDragItem.qml',
         'medialibrary/qml/MLTableColumns.qml',
+        'medialibrary/qml/ScanProgressBar.qml',
     ),
 }
 
@@ -877,7 +896,6 @@ qml_modules += {
         'widgets/qml/PlayCover.qml',
         'widgets/qml/RoundButtonExt.qml',
         'widgets/qml/ScaledImage.qml',
-        'widgets/qml/ScanProgressBar.qml',
         'widgets/qml/TextAutoScroller.qml',
         'widgets/qml/SearchBox.qml',
         'widgets/qml/SliderExt.qml',
@@ -913,6 +931,7 @@ qml_modules += {
         'widgets/qml/VoronoiSnow.qml',
         'widgets/qml/DualKawaseBlur.qml',
         'widgets/qml/CheckBoxExt.qml',
+        'widgets/qml/ProgressBarExt.qml',
     ),
 }
 
@@ -1094,6 +1113,70 @@ if qt6_dep.found()
         qt_extra_flags += '-DQT_GUI_PRIVATE'
     endif
 
+    qt_wayland_gui_private = cpp.has_header(
+        'qpa/qplatformnativeinterface.h', dependencies: qt6_dep)
+
+    if have_wayland and qt_wayland_gui_private
+        qt_extra_flags += '-DQT_HAS_WAYLAND_COMPOSITOR'
+        qt_extra_deps += wayland_deps[0]
+
+        qt_wl_xdg_shell_xml = wayland_protocols_dir / 'stable/xdg-shell/xdg-shell.xml'
+
+        qt_wl_xdg_shell_hdr = custom_target(
+            'qt-wayland-xdg-shell-client-header',
+            output: 'xdg-shell-client-protocol.h',
+            input: qt_wl_xdg_shell_xml,
+            command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+        )
+        qt_wl_xdg_shell_code = custom_target(
+            'qt-wayland-xdg-shell-code',
+            output: 'xdg-shell-protocol.c',
+            input: qt_wl_xdg_shell_xml,
+            command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+        )
+
+        qt_wayland_sources = [
+            files(
+                'maininterface/qt_wayland_plugin.c',
+                'maininterface/compositor_wayland_module.c',
+                'maininterface/compositor_wayland_module.h',
+                'util/csdmenu_wayland.c',
+                'util/csdmenu_wayland.h',
+                'util/csdmenu_module.h',
+            ),
+            qt_wl_xdg_shell_hdr,
+            qt_wl_xdg_shell_code,
+        ]
+
+        qt_wayland_cargs = ['-DQT_HAS_WAYLAND_PROTOCOLS']
+
+        if qt6_dep.version().version_compare('>= 6.5')
+            qt_wayland_cargs += '-DQT_HAS_WAYLAND_FRACTIONAL_SCALING'
+            qt_wl_viewporter_xml = wayland_protocols_dir / 'stable/viewporter/viewporter.xml'
+            qt_wl_viewporter_hdr = custom_target(
+                'qt-wayland-viewporter-client-header',
+                output: 'viewporter-client-protocol.h',
+                input: qt_wl_viewporter_xml,
+                command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+            )
+            qt_wl_viewporter_code = custom_target(
+                'qt-wayland-viewporter-code',
+                output: 'viewporter-protocol.c',
+                input: qt_wl_viewporter_xml,
+                command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+            )
+            qt_wayland_sources += [qt_wl_viewporter_hdr, qt_wl_viewporter_code]
+        endif
+
+        vlc_modules += {
+            'name': 'qt_wayland',
+            'sources': qt_wayland_sources,
+            'c_args': qt_wayland_cargs,
+            'include_directories': [qt_include_dir],
+            'dependencies': [wayland_deps[0], m_lib],
+        }
+    endif
+
     if host_system == 'windows'
         qt_cppargs += libcom_cppflags
     endif
@@ -1143,11 +1226,6 @@ if qt6_dep.found()
             }
         endif
     endif
-
-    if get_option('update-check').allowed() and gcrypt_dep.found()
-        qt_extra_flags += '-DUPDATE_CHECK'
-    endif
-
 
     vlc_modules += {
         'name' : 'qt_x11',

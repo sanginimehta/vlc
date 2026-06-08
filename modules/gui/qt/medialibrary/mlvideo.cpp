@@ -109,21 +109,8 @@ MLVideo::MLVideo(const vlc_ml_media_t* data)
         }
     }
 
-    m_channel = "";
-    if ( numChannel >= 8 )
-        m_channel = "7.1";
-    else if ( numChannel >= 6 )
-        m_channel = "5.1";
-
-    m_resolution = "";
-    if ( maxWidth >= 7680 && maxHeight >= 4320 )
-        m_resolution = "8K";
-    else if ( maxWidth >= 3840 && maxHeight >= 2160 )
-        m_resolution = "4K";
-    else if ( maxWidth >= 1440 && maxHeight >= 1080 )
-        m_resolution = "HD";
-    else if ( maxWidth >= 720 && maxHeight >= 1280 )
-        m_resolution = "720p";
+    m_channel = channelNameFromNbChannels(numChannel);
+    m_resolution = resolutionNameFromSize(maxWidth, maxHeight);
 }
 
 bool MLVideo::isNew() const

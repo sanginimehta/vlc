@@ -16,6 +16,7 @@ SUFFIXES = .rc.in .rc
 
 AM_CPPFLAGS = $(CPPFLAGS_vlc)
 AM_CFLAGS = $(CFLAGS_vlc)
+noinst_LTLIBRARIES =
 if HAVE_DBUS
 AM_CPPFLAGS += -DHAVE_DBUS
 endif
@@ -41,7 +42,7 @@ libbreakpad_wrapper_la_LIBADD = $(BREAKPAD_LIBS)
 libbreakpad_wrapper_la_LDFLAGS = -static
 libbreakpad_wrapper_la_CXXFLAGS = $(AM_CXXFLAGS) $(BREAKPAD_CFLAGS) -DBREAKPAD_URL=\"@BREAKPAD_URL@\"
 if HAVE_BREAKPAD
-noinst_LTLIBRARIES = libbreakpad_wrapper.la
+noinst_LTLIBRARIES += libbreakpad_wrapper.la
 vlc_LDADD += libbreakpad_wrapper.la -lstdc++ -lwininet
 EXTRA_vlc_DEPENDENCIES += libbreakpad_wrapper.la
 vlc_CPPFLAGS += -DHAVE_BREAKPAD
@@ -49,16 +50,18 @@ endif
 endif
 
 vlc_osx_SOURCES = darwinvlc.m
+vlc_osx_CPPFLAGS = $(AM_CPPFLAGS)
 vlc_osx_LDFLAGS = $(LDFLAGS_vlc) -Wl,-framework,CoreFoundation,-framework,Cocoa
 vlc_osx_LDFLAGS += -Xlinker -rpath -Xlinker "$(libdir)"
 if HAVE_BREAKPAD
 vlc_osx_LDFLAGS += -Wl,-framework,Breakpad
 vlc_osx_OBJCFLAGS = -F$(CONTRIB_DIR)/Frameworks
-vlc_osx_CPPFLAGS = -DHAVE_BREAKPAD
+vlc_osx_CPPFLAGS += -DHAVE_BREAKPAD
 endif
 vlc_osx_LDADD = ../lib/libvlc.la
 
 vlc_osx_static_SOURCES = $(vlc_osx_SOURCES)
+vlc_osx_static_CPPFLAGS = $(vlc_osx_CPPFLAGS)
 vlc_osx_static_OBJCFLAGS = $(AM_OBJCFLAGS) \
 	-DTOP_BUILDDIR=\"$(abs_top_builddir)\" \
 	-DTOP_SRCDIR=\"$(abs_top_srcdir)\" \
@@ -71,7 +74,6 @@ vlc_osx_static_LDADD = $(vlc_osx_LDADD)
 if HAVE_BREAKPAD
 vlc_osx_static_LDFLAGS += -Wl,-framework,Breakpad
 vlc_osx_static_OBJCFLAGS += -F$(CONTRIB_DIR)/Frameworks
-vlc_osx_static_CPPFLAGS = -DHAVE_BREAKPAD
 endif
 
 
@@ -123,6 +125,16 @@ if HAVE_WIN32
 vlc_cache_gen_LDADD += vlc_win32_rc.$(OBJEXT)
 vlc_cache_gen_LDFLAGS = -Wc,-static
 EXTRA_vlc_cache_gen_DEPENDENCIES = vlc_win32_rc.$(OBJEXT)
+endif
+
+if HAVE_PARTIAL_LINKING
+AM_CPPFLAGS += -DVLC_PARTIAL_LINKING -I $(builddir)/../modules/
+if !HAVE_WIN32
+vlc_SOURCES += vlc_static_modules.c
+endif
+vlc_osx_SOURCES += vlc_static_modules.c
+vlc_LDADD += ../modules/libvlc_static_modules.la
+vlc_osx_LDADD += ../modules/libvlc_static_modules.la
 endif
 
 #

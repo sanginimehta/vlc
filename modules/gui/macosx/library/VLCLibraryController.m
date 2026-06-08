@@ -248,6 +248,8 @@ typedef int (*folder_action_f)(vlc_medialibrary_t*, const char*);
     return vlc_ml_clear_history(_p_libraryInstance, VLC_ML_HISTORY_TYPE_GLOBAL);
 }
 
+#pragma mark - Playlist creation
+
 - (void)showCreatePlaylistDialogForPlayQueue
 {
     VLCPlayQueueController * const playQueueController = VLCMain.sharedInstance.playQueueController;
@@ -261,42 +263,67 @@ typedef int (*folder_action_f)(vlc_medialibrary_t*, const char*);
         return;
     }
 
+    NSString * const playlistName = [self runCreatePlaylistDialog];
+    if (!playlistName) {
+        return;
+    }
+
+    if (![self createPlaylistWithName:playlistName fromPlayQueueItems:items]) {
+        msg_Err(getIntf(), "Failed to create playlist '%s' from play queue items", playlistName.UTF8String);
+    }
+}
+
+- (void)showCreatePlaylistDialogForMediaItems:(NSArray<VLCMediaLibraryMediaItem *> *)mediaItems
+{
+    if (!mediaItems || mediaItems.count == 0) {
+        return;
+    }
+
+    NSString * const playlistName = [self runCreatePlaylistDialog];
+    if (!playlistName) {
+        return;
+    }
+
+    if (![self createPlaylistWithName:playlistName fromMediaItems:mediaItems]) {
+        msg_Err(getIntf(), "Failed to create playlist '%s' from media items", playlistName.UTF8String);
+    }
+}
+
+- (nullable NSString *)runCreatePlaylistDialog
+{
     NSAlert * const alert = [[NSAlert alloc] init];
     alert.messageText = _NS("Create New Playlist");
     alert.informativeText = _NS("Enter a name for the new playlist:");
-    [alert addButtonWithTitle:_NS("Create")];
+    NSButton * const createButton = [alert addButtonWithTitle:_NS("Create")];
+    createButton.enabled = NO;
     [alert addButtonWithTitle:_NS("Cancel")];
 
     NSTextField * const input = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 300, 24)];
     input.placeholderString = _NS("Playlist Name");
     alert.accessoryView = input;
-
     alert.window.initialFirstResponder = input;
 
+    NSCharacterSet * const whitespace = NSCharacterSet.whitespaceAndNewlineCharacterSet;
+    id observer = [NSNotificationCenter.defaultCenter
+        addObserverForName:NSControlTextDidChangeNotification
+                   object:input
+                    queue:NSOperationQueue.mainQueue
+               usingBlock:^(NSNotification *note) {
+        createButton.enabled = [input.stringValue stringByTrimmingCharactersInSet:whitespace].length > 0;
+    }];
+
     const NSModalResponse response = [alert runModal];
+    [NSNotificationCenter.defaultCenter removeObserver:observer];
+
     if (response != NSAlertFirstButtonReturn) {
-        return;
+        return nil;
     }
 
-    NSString * const playlistName = input.stringValue;
-    if (playlistName.length == 0) {
-        return;
-    }
-
-    const BOOL success = [self createPlaylistWithName:playlistName fromItems:items];
-    if (success) {
-        return;
-    }
-
-    NSAlert * const errorAlert = [[NSAlert alloc] init];
-    errorAlert.messageText = _NS("Failed to Create Playlist");
-    errorAlert.informativeText = _NS("The playlist could not be created. Please try again.");
-    errorAlert.alertStyle = NSAlertStyleWarning;
-    [errorAlert addButtonWithTitle:_NS("OK")];
-    [errorAlert runModal];
+    NSString * const name = [input.stringValue stringByTrimmingCharactersInSet:whitespace];
+    return name.length > 0 ? name : nil;
 }
 
-- (BOOL)createPlaylistWithName:(NSString *)playlistName fromItems:(NSArray<VLCPlayQueueItem *> *)items
+- (BOOL)createPlaylistWithName:(NSString *)playlistName fromPlayQueueItems:(NSArray<VLCPlayQueueItem *> *)items
 {
     if (!_p_libraryInstance || !playlistName || playlistName.length == 0) {
         return NO;
@@ -334,66 +361,21 @@ typedef int (*folder_action_f)(vlc_medialibrary_t*, const char*);
     if (!_p_libraryInstance || !playlistName || playlistName.length == 0) {
         return NO;
     }
-    
+
     vlc_ml_playlist_t * const playlist = vlc_ml_playlist_create(_p_libraryInstance, playlistName.UTF8String);
     if (!playlist) {
         msg_Err(getIntf(), "Failed to create playlist with name: %s", playlistName.UTF8String);
         return NO;
     }
-    
+
     const int64_t playlistId = playlist->i_id;
     vlc_ml_playlist_release(playlist);
-    
-    for (VLCMediaLibraryMediaItem * const mediaItem in mediaItems) {
-        const int64_t mediaId = mediaItem.libraryID;
-        const int result = vlc_ml_playlist_append(_p_libraryInstance, playlistId, &mediaId, 1);
-        if (result != VLC_SUCCESS) {
-            msg_Warn(getIntf(), "Failed to add media library item %lld to playlist", mediaItem.libraryID);
-        }
-    }
-    
-    return YES;
-}
 
-- (void)showCreatePlaylistDialogForMediaItems:(NSArray<VLCMediaLibraryMediaItem *> *)mediaItems
-{
-    if (!mediaItems || mediaItems.count == 0) {
-        return;
-    }
-    
-    NSAlert * const alert = [[NSAlert alloc] init];
-    alert.messageText = _NS("Create New Playlist");
-    alert.informativeText = _NS("Enter a name for the new playlist:");
-    [alert addButtonWithTitle:_NS("Create")];
-    [alert addButtonWithTitle:_NS("Cancel")];
-    
-    NSTextField * const input = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 300, 24)];
-    input.placeholderString = _NS("Playlist Name");
-    alert.accessoryView = input;
-    
-    alert.window.initialFirstResponder = input;
-    
-    const NSModalResponse response = [alert runModal];
-    if (response != NSAlertFirstButtonReturn) {
-        return;
-    }
-    
-    NSString * const playlistName = input.stringValue;
-    if (playlistName.length == 0) {
-        return;
-    }
-    
-    const BOOL success = [self createPlaylistWithName:playlistName fromMediaItems:mediaItems];
-    if (success) {
-        return;
-    }
-    
-    NSAlert * const errorAlert = [[NSAlert alloc] init];
-    errorAlert.messageText = _NS("Failed to Create Playlist");
-    errorAlert.informativeText = _NS("The playlist could not be created. Please try again.");
-    errorAlert.alertStyle = NSAlertStyleWarning;
-    [errorAlert addButtonWithTitle:_NS("OK")];
-    [errorAlert runModal];
+    VLCMediaLibraryPlaylist * const mlPlaylist =
+        [VLCMediaLibraryPlaylist playlistForLibraryID:playlistId];
+    [mlPlaylist appendMediaItems:mediaItems];
+
+    return YES;
 }
 
 - (void)sortByCriteria:(enum vlc_ml_sorting_criteria_t)sortCriteria andDescending:(bool)descending

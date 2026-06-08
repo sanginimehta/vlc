@@ -469,19 +469,18 @@ typedef struct
 #define MPEG4_STREAMMUX_MAX_PROGRAM 16
 typedef struct
 {
-    bool b_same_time_framing;
-    uint8_t i_sub_frames;
-    uint8_t i_programs;
+    bool allStreamsSameTimeFraming;
+    uint8_t numSubFrames;
+    uint8_t numProgram;
 
-    uint8_t pi_layers[MPEG4_STREAMMUX_MAX_PROGRAM];
+    uint8_t p_numLayer[MPEG4_STREAMMUX_MAX_PROGRAM];
 
     uint8_t pi_stream[MPEG4_STREAMMUX_MAX_PROGRAM][MPEG4_STREAMMUX_MAX_LAYER];
 
     uint8_t i_streams;
     MPEG4_audio_stream_t stream[MPEG4_STREAMMUX_MAX_PROGRAM*MPEG4_STREAMMUX_MAX_LAYER];
 
-    uint32_t i_other_data;
-    int16_t  i_crc;  /* -1 if not set */
+    uint32_t otherDataLenBits;
 } MPEG4_streammux_config_t;
 
 static inline uint32_t MPEG4_LatmGetValue(bs_t *s)
@@ -504,36 +503,32 @@ static inline size_t AudioSpecificConfigBitsToBytes(bs_t *s, uint32_t i_bits, ui
 
 static inline int MPEG4_parse_StreamMuxConfig(bs_t *s, MPEG4_streammux_config_t *m)
 {
-    int i_mux_version;
-    int i_mux_versionA;
+    bool audioMuxVersion;
 
-    i_mux_version = bs_read(s, 1);
-    i_mux_versionA = 0;
-    if (i_mux_version)
-        i_mux_versionA = bs_read(s, 1);
-
-    if (i_mux_versionA != 0) /* support only A=0 */
-        return -1;
+    audioMuxVersion = bs_read(s, 1);
+    if (audioMuxVersion) {
+        if (bs_read(s, 1) != 0) /* support only audioMuxVersionA=0 */
+            return -1;
+    }
 
     memset(m, 0, sizeof(*m));
 
-    if (i_mux_versionA == 0)
-        if (i_mux_version == 1)
-            MPEG4_LatmGetValue(s); /* taraBufferFullness */
+    if (audioMuxVersion)
+        MPEG4_LatmGetValue(s); /* taraBufferFullness */
 
     if(bs_eof(s))
         return -1;
 
-    m->b_same_time_framing = bs_read1(s);
-    m->i_sub_frames = 1 + bs_read(s, 6);
-    m->i_programs = 1 + bs_read(s, 4);
+    m->allStreamsSameTimeFraming = bs_read1(s);
+    m->numSubFrames = bs_read(s, 6);
+    m->numProgram = bs_read(s, 4);
 
-    for (uint8_t i_program = 0; i_program < m->i_programs; i_program++) {
+    for (uint8_t i_program = 0; i_program <= m->numProgram; i_program++) {
         if(bs_eof(s))
             return -1;
-        m->pi_layers[i_program] = 1+bs_read(s, 3);
+        m->p_numLayer[i_program] = bs_read(s, 3);
 
-        for (uint8_t i_layer = 0; i_layer < m->pi_layers[i_program]; i_layer++) {
+        for (uint8_t i_layer = 0; i_layer <= m->p_numLayer[i_program]; i_layer++) {
             MPEG4_audio_stream_t *st = &m->stream[m->i_streams];
             bool b_previous_cfg;
 
@@ -550,11 +545,11 @@ static inline int MPEG4_parse_StreamMuxConfig(bs_t *s, MPEG4_streammux_config_t 
                 st->cfg = m->stream[m->i_streams-1].cfg;
             } else {
                 uint32_t asc_size = 0;
-                if(i_mux_version > 0)
+                if(audioMuxVersion)
                     asc_size = MPEG4_LatmGetValue(s);
                 bs_t asc_bs = *s;
-                MPEG4_read_AudioSpecificConfig(&asc_bs, &st->cfg, i_mux_version > 0);
-                if (i_mux_version == 0)
+                MPEG4_read_AudioSpecificConfig(&asc_bs, &st->cfg, audioMuxVersion);
+                if (!audioMuxVersion)
                     asc_size = bs_pos(&asc_bs) - bs_pos(s);
                 asc_bs = *s;
                 st->i_extra = AudioSpecificConfigBitsToBytes(&asc_bs, asc_size, st->extra);
@@ -567,7 +562,7 @@ static inline int MPEG4_parse_StreamMuxConfig(bs_t *s, MPEG4_streammux_config_t 
             case 0:
             {
                 bs_skip(s, 8); /* latmBufferFullnes */
-                if (!m->b_same_time_framing)
+                if (!m->allStreamsSameTimeFraming)
                     if (st->cfg.i_object_type == MPEG4_AOT_AAC_SC ||
                         st->cfg.i_object_type == MPEG4_AOT_CELP ||
                         st->cfg.i_object_type == MPEG4_AOT_ER_AAC_SC ||
@@ -595,23 +590,23 @@ static inline int MPEG4_parse_StreamMuxConfig(bs_t *s, MPEG4_streammux_config_t 
         return -1;
 
     /* other data */
-    if (bs_read1(s)) {
-        if (i_mux_version == 1)
-            m->i_other_data = MPEG4_LatmGetValue(s);
+    if (bs_read1(s)) { // otherDataPresent
+        if (audioMuxVersion)
+            m->otherDataLenBits = MPEG4_LatmGetValue(s);
         else {
-            int b_continue;
+            bool otherDataLenEsc;
             do {
-                b_continue = bs_read1(s);
-                m->i_other_data = (m->i_other_data << 8) + bs_read(s, 8);
-            } while (b_continue);
+                otherDataLenEsc = bs_read1(s);
+                m->otherDataLenBits = (m->otherDataLenBits << 8) + bs_read(s, 8);
+            } while (otherDataLenEsc);
         }
     }
+    else
+        m->otherDataLenBits = 0;
 
     /* crc */
-    m->i_crc = -1;
     if (bs_read1(s))
-        m->i_crc = bs_read(s, 8);
+        bs_skip(s, 8);
 
     return bs_error(s) ? -1 : 0;
 }
-

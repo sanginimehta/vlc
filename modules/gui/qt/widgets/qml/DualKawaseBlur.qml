@@ -94,6 +94,17 @@ Item {
     // it is wanted or necessary anyway.
     property Item source
 
+    readonly property real eDPR: _eDPR
+    property real _eDPR: MainCtx.effectiveDevicePixelRatio(Window.window) || 1.0
+
+    Connections {
+        target: MainCtx
+
+        function onIntfDevicePixelRatioChanged() {
+            root._eDPR = MainCtx.effectiveDevicePixelRatio(root.Window.window) || 1.0
+        }
+    }
+
     /// <debug>
     readonly property QtObject _sourceWindow: (source?.Window.window ?? null)
     function _onWindowChanged() {
@@ -109,6 +120,8 @@ Item {
 
     // Arbitrary sub-texturing (no need to be set for atlas textures):
     // `QSGTextureView` can also be used instead of sub-texturing here.
+    // NOTE: `sourceRect` is expected to be in item coordinates, similar to
+    //       `ShaderEffectSource::sourceRect`.
     property rect sourceRect
 
     // Viewport rect allows to discard an unwanted area in effect's local coordinates.
@@ -128,9 +141,14 @@ Item {
     // rect is set to discard the empty margins. Another use case is freely
     // adjusting the position of the visual when viewport rect is smaller than
     // the effect size, since with only viewport rect the visual is always
-    // centered in the parent (effect).
+    // centered in the parent (effect). Note that the reference point used
+    // for sub-texturing is (visualRect.xy - viewportRect.xy), which makes the
+    // texture centered with `viewportRect.xy` acting as the margins, and
+    // the value can be both positive or negative.
+    // NOTE: `visualRect` is expected to be in item coordinates, similar to
+    //       `sourceRect`.
     property rect visualRect
-    property int visualWrapMode: TextureProviderIndirection.ClampToEdge
+    property int visualWrapMode: ShaderEffectSource.ClampToEdge
 
     // Local viewport rect is viewport rect divided by two, because it is used as the source
     // rect of last layer, which is 2x upsampled by the painter delegate (us2):
@@ -164,36 +182,9 @@ Item {
 
     property bool _queuedScheduledUpdate: false
 
-    readonly property var _comparisonVar: ({key: sourceTextureProviderObserver.comparisonKey,
-                                            subRect: sourceTextureProviderObserver.normalizedTextureSubRect})
-    property var _oldComparisonVar
-
-    on_ComparisonVarChanged: {
-        if (_comparisonVar.key >= 0) {
-            if (_oldComparisonVar !== undefined && _oldComparisonVar !== _comparisonVar) {
-                _oldComparisonVar = undefined
-
-                // If source texture is not valid, update will be requeued in `scheduleUpdate()`.
-                // That being said, a non-valid source texture should have (-1) as comparison key,
-                // which we already checked here.
-
-                if (root.funcOnNextEffectureTextureChange) {
-                    root.funcOnNextEffectureTextureChange()
-                }
-            }
-        }
-    }
-
-    // This is not respected when `live` is true, it is only for the `scheduleUpdate(true)` calls.
-    property var funcOnNextEffectureTextureChange: function() {
-        root.scheduleUpdate()
-    }
-
-    // When `onNextEffectiveTextureChange` is set, the update is scheduled automatically when the effective
-    // texture changes, which is when the texture itself changes or the texture remains the same but
-    // the sub-rect changes (such as, the new texture is a different part of the same atlas texture).
-    // This behavior can be fine-tuned with the property `funcOnNextEffectureTextureChange`.
-    function scheduleUpdate(onNextEffectiveTextureChange /* : bool */ = false) {
+    // NOTE: You can use the `sourceTextureProviderObserver.textureChanged()` signal to schedule an update
+    //       on source texture change at appropriate time.
+    function scheduleUpdate() {
         if (live)
             return // no-op
 
@@ -202,11 +193,6 @@ Item {
 
         if (!root.sourceTextureIsValid) {
             root._queuedScheduledUpdate = true // if source texture is not valid, delay the update until valid
-            return
-        }
-
-        if (onNextEffectiveTextureChange) {
-            root._oldComparisonVar = root._comparisonVar
             return
         }
 
@@ -309,10 +295,10 @@ Item {
         //       and normalize in the vertex shader, but we can not because we are
         //       targeting GLSL 1.20/ESSL 1.0, even though the shader is written in
         //       GLSL 4.40.
-        normalRect: (root.sourceRect.width > 0.0 && root.sourceRect.height > 0.0) ? Qt.rect(root.sourceRect.x / sourceTextureSize.width,
-                                                                                            root.sourceRect.y / sourceTextureSize.height,
-                                                                                            root.sourceRect.width / sourceTextureSize.width,
-                                                                                            root.sourceRect.height / sourceTextureSize.height)
+        normalRect: (root.sourceRect.width > 0.0 && root.sourceRect.height > 0.0) ? Qt.rect(root.sourceRect.x * root.eDPR / sourceTextureSize.width,
+                                                                                            root.sourceRect.y * root.eDPR / sourceTextureSize.height,
+                                                                                            root.sourceRect.width * root.eDPR / sourceTextureSize.width,
+                                                                                            root.sourceRect.height * root.eDPR / sourceTextureSize.height)
                                                                                   : Qt.rect(0.0, 0.0, 0.0, 0.0)
     }
 
@@ -324,6 +310,8 @@ Item {
         // Last layer for two pass mode, so use the viewport rect:
         sourceRect: (root.mode === DualKawaseBlur.Mode.TwoPass) ? root._localViewportRect : Qt.rect(0, 0, 0, 0)
         
+        wrapMode: (root.mode === DualKawaseBlur.Mode.TwoPass) ? root.visualWrapMode : ShaderEffectSource.ClampToEdge
+
         function scheduleChainedUpdate() {
             if (!ds1layer) // context is lost, Qt bug (reproduced with 6.2)
                 return
@@ -434,6 +422,8 @@ Item {
         // No need to check for the mode because this layer is not used in two pass mode anyway.
         sourceRect: root._localViewportRect
 
+        wrapMode: (root.mode === DualKawaseBlur.Mode.FourPass) ? root.visualWrapMode : ShaderEffectSource.ClampToEdge
+
         function scheduleChainedUpdate() {
             if (!us1layer) // context is lost, Qt bug (reproduced with 6.2)
                 return
@@ -507,13 +497,13 @@ Item {
         id: us2
 
         // {us1/ds1}.size * 2, unless visual rect is used
-        anchors.centerIn: useIndirection ? undefined : parent
+        anchors.centerIn: useSubTexture ? undefined : parent
 
-        x: useIndirection ? root.visualRect.x : 0
-        y: useIndirection ? root.visualRect.y : 0
+        x: useSubTexture ? root.visualRect.x : 0
+        y: useSubTexture ? root.visualRect.y : 0
 
         width: {
-            if (useIndirection)
+            if (useSubTexture)
                 return root.visualRect.width
 
             if (root.viewportRect.width > 0)
@@ -523,7 +513,7 @@ Item {
         }
 
         height: {
-            if (useIndirection)
+            if (useSubTexture)
                 return root.visualRect.height
 
             if (root.viewportRect.height > 0)
@@ -532,13 +522,11 @@ Item {
             return parent.height
         }
 
-        readonly property bool useIndirection: (root.visualRect.width > 0 && root.visualRect.height > 0)
+        readonly property bool useSubTexture: (root.visualRect.width > 0 && root.visualRect.height > 0)
 
         visible: tpObserver.isValid && root.available
 
-        source: useIndirection ? textureProviderIndirection : targetSource
-
-        readonly property Item targetSource: (root.mode === DualKawaseBlur.Mode.TwoPass) ? ds1layer : us1layer
+        source: (root.mode === DualKawaseBlur.Mode.TwoPass) ? ds1layer : us1layer
 
         property alias tint: root.tint
         property alias tintStrength: root.tintStrength
@@ -549,28 +537,12 @@ Item {
         fragmentShader: root.postprocess ? "qrc:///shaders/DualKawaseBlur_upsample_postprocess.frag.qsb"
                                          : "qrc:///shaders/DualKawaseBlur_upsample.frag.qsb"
 
-        property real _eDPR: MainCtx.effectiveDevicePixelRatio(Window.window) || 1.0
+        // NOTE: Vertex shader is set in `DefaultShaderEffect` when `normalRect` is valid.
 
-        Connections {
-            target: MainCtx
-
-            function onIntfDevicePixelRatioChanged() {
-                us2._eDPR = MainCtx.effectiveDevicePixelRatio(us2.Window.window) || 1.0
-            }
-        }
-
-        TextureProviderIndirection {
-            id: textureProviderIndirection
-
-            source: us2.targetSource
-
-            textureSubRect: Qt.rect(0,
-                                    0,
-                                    root._localVisualRect.width * us2._eDPR,
-                                    root._localVisualRect.height * us2._eDPR)
-
-            horizontalWrapMode: root.visualWrapMode
-            verticalWrapMode: root.visualWrapMode
-        }
+        normalRect: useSubTexture ? Qt.rect((root._localVisualRect.x - root._localViewportRect.x) * root.eDPR / sourceTextureSize.width,
+                                            (root._localVisualRect.y - root._localViewportRect.y) * root.eDPR / sourceTextureSize.height,
+                                            root._localVisualRect.width * root.eDPR / sourceTextureSize.width,
+                                            root._localVisualRect.height * root.eDPR / sourceTextureSize.height)
+                                  : Qt.rect(0,0,0,0)
     }
 }

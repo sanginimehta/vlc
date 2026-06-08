@@ -217,10 +217,23 @@ NSString * const VLCLibraryCollectionViewItemAdjustmentKey = @"VLCLibraryCollect
     return 180;
 }
 
-+ (const NSEdgeInsets)libraryViewScrollViewContentInsets
++ (const CGFloat)libraryWindowContentSafeTopInset
 {
     VLCLibraryWindow * const libraryWindow = VLCMain.sharedInstance.libraryWindow;
-    const CGFloat toolbarHeight = libraryWindow.titlebarHeight;
+    if (@available(macOS 11.0, *)) {
+        return libraryWindow.contentView.safeAreaInsets.top;
+    }
+
+    if (libraryWindow.styleMask & NSWindowStyleMaskFullSizeContentView) {
+        return libraryWindow.contentView.frame.size.height - libraryWindow.contentLayoutRect.size.height;
+    }
+
+    return 0;
+}
+
++ (const NSEdgeInsets)libraryViewScrollViewContentInsets
+{
+    const CGFloat toolbarHeight = VLCLibraryUIUnits.libraryWindowContentSafeTopInset;
     const CGFloat controlsBarHeight = VLCLibraryUIUnits.libraryWindowControlsBarHeight;
     const CGFloat controlsBarPadding = VLCLibraryUIUnits.largeSpacing * 2; // Additional padding for floating controls bar
 
@@ -254,8 +267,7 @@ NSString * const VLCLibraryCollectionViewItemAdjustmentKey = @"VLCLibraryCollect
 
 + (const NSEdgeInsets)libraryViewScrollViewScrollerInsets
 {
-    VLCLibraryWindow * const libraryWindow = VLCMain.sharedInstance.libraryWindow;
-    const CGFloat toolbarHeight = libraryWindow.titlebarHeight;
+    const CGFloat toolbarHeight = VLCLibraryUIUnits.libraryWindowContentSafeTopInset;
 
     const NSEdgeInsets contentInsets = [self libraryViewScrollViewContentInsets];
     return NSEdgeInsetsMake(-contentInsets.top + toolbarHeight,

@@ -167,23 +167,19 @@ void matroska_segment_c::LoadCues( KaxCues *cues )
 #if LIBMATROSKA_VERSION >= 0x010401
                             else if( MKV_CHECKED_PTR_DECL( cuerelative, KaxCueRelativePosition, el ) )
                             {
-                                // IGNORE
-                                cuerelative->ReadData( es.I_O() );
+                                VLC_UNUSED( cuerelative );
                             }
                             else if( MKV_CHECKED_PTR_DECL( cueblock, KaxCueBlockNumber, el ) )
                             {
-                                // IGNORE
-                                cueblock->ReadData( es.I_O() );
+                                VLC_UNUSED( cueblock );
                             }
                             else if( MKV_CHECKED_PTR_DECL( cueref, KaxCueReference, el ) )
                             {
-                                // IGNORE
-                                cueref->ReadData( es.I_O(), SCOPE_ALL_DATA );
+                                VLC_UNUSED( cueref );
                             }
                             else if( MKV_CHECKED_PTR_DECL( cueduration, KaxCueDuration, el ) )
                             {
-                                /* For future use */
-                                cueduration->ReadData( es.I_O() );
+                                VLC_UNUSED( cueduration );
                             }
 #endif
                             else
@@ -1230,6 +1226,12 @@ int matroska_segment_c::BlockGet( KaxBlock * & pp_block, KaxSimpleBlock * & pp_s
         }
         E_CASE( KaxBlockGroup, kbgroup )
         {
+            if( vars.b_cluster_timecode == false )
+            {
+                msg_Warn( vars.p_demuxer, "ignoring KaxBlockGroup prior to mandatory Timecode" );
+                return;
+            }
+
             vars.obj->i_block_pos = kbgroup.GetElementPosition();
             vars.ep->Down ();
         }

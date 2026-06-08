@@ -134,8 +134,6 @@ NSString * const VLCMediaSourceDataSourceNodeChanged = @"VLCMediaSourceDataSourc
     NSAssert(nodeToDisplay, @"Nil node to display, will not set");
     _nodeToDisplay = nodeToDisplay;
 
-    input_item_node_t * const inputNode = nodeToDisplay.vlcInputItemNode;
-
     NSParameterAssert(self.parentBaseDataSource);
     if (self.parentBaseDataSource.mediaSourceMode == VLCMediaSourceModeLAN) {
         NSURL * const nodeUrl = [NSURL URLWithString:nodeToDisplay.inputItem.MRL];
@@ -145,16 +143,9 @@ NSString * const VLCMediaSourceDataSourceNodeChanged = @"VLCMediaSourceDataSourc
             return;
         }
 
-        NSError * const error =
-            [self.displayedMediaSource generateChildNodesForDirectoryNode:inputNode
-                                                                  withUrl:nodeUrl];
-        if (error) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                NSAlert * const alert = [NSAlert alertWithError:error];
-                alert.alertStyle = NSAlertStyleCritical;
-                [alert runModal];
-            });
-            return;
+        if (self.observedPathDispatchSource) {
+            dispatch_source_cancel(self.observedPathDispatchSource);
+            self.observedPathDispatchSource = nil;
         }
 
         const __weak typeof(self) weakSelf = self;
@@ -171,7 +162,7 @@ NSString * const VLCMediaSourceDataSourceNodeChanged = @"VLCMediaSourceDataSourc
                 });
             } else {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [weakSelf.displayedMediaSource generateChildNodesForDirectoryNode:inputNode
+                    [weakSelf.displayedMediaSource generateChildNodesForDirectoryNode:nodeToDisplay
                                                                               withUrl:nodeUrl];
                     [weakSelf reloadData];
                 });
@@ -321,12 +312,15 @@ NSString * const VLCMediaSourceDataSourceNodeChanged = @"VLCMediaSourceDataSourc
             cellView.textField.stringValue = NSTR("Loading…");
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
                 NSURL * const inputNodeUrl = [NSURL URLWithString:inputNode.inputItem.MRL];
-                input_item_node_t * const p_inputNode = inputNode.vlcInputItemNode;
                 NSError * const error =
-                    [self.displayedMediaSource generateChildNodesForDirectoryNode:p_inputNode
+                    [self.displayedMediaSource generateChildNodesForDirectoryNode:inputNode
                                                                           withUrl:inputNodeUrl];
-                if (error)
+                if (error) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        cellView.textField.stringValue = NSTR("Unavailable");
+                    });
                     return;
+                }
 
                 dispatch_async(dispatch_get_main_queue(), ^{
                     cellView.textField.stringValue =
@@ -454,7 +448,7 @@ NSString * const VLCMediaSourceDataSourceNodeChanged = @"VLCMediaSourceDataSourc
 
     VLCInputItem *childRootInput = node.inputItem;
 
-    if (childRootInput.inputType == ITEM_TYPE_DIRECTORY || childRootInput.inputType == ITEM_TYPE_NODE) {
+    if (childRootInput.inputType == ITEM_TYPE_DIRECTORY || childRootInput.inputType == ITEM_TYPE_NODE || childRootInput.inputType == ITEM_TYPE_PLAYLIST) {
         VLCInputNodePathControlItem *nodePathItem = [[VLCInputNodePathControlItem alloc] initWithInputNode:node];
         [self.pathControl appendInputNodePathControlItem:nodePathItem];
 

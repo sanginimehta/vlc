@@ -1062,6 +1062,50 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
     }
 }
 
+- (void)removeMediaItemsAtPositions:(NSArray<NSNumber *> *)positions
+{
+    if (positions.count == 0) {
+        return;
+    }
+
+    vlc_medialibrary_t * const p_ml = getMediaLibrary();
+    if (p_ml == NULL) {
+        return;
+    }
+
+    NSArray<NSNumber *> * const sorted =
+        [positions sortedArrayUsingSelector:@selector(compare:)];
+
+    // Fold consecutive positions into (start, length) ranges
+    NSMutableArray<NSValue *> * const ranges = NSMutableArray.array;
+    NSUInteger rangeStart = sorted.firstObject.unsignedIntegerValue;
+    NSUInteger rangeLen = 1;
+    for (NSUInteger i = 1; i < sorted.count; i++) {
+        const NSUInteger pos = sorted[i].unsignedIntegerValue;
+        if (pos == rangeStart + rangeLen) {
+            rangeLen++;
+            continue;
+        }
+        [ranges addObject:[NSValue valueWithRange:NSMakeRange(rangeStart, rangeLen)]];
+        rangeStart = pos;
+        rangeLen = 1;
+    }
+    [ranges addObject:[NSValue valueWithRange:NSMakeRange(rangeStart, rangeLen)]];
+
+    // Descending order so removing one range does not shift earlier indices
+    for (NSValue * const value in ranges.reverseObjectEnumerator) {
+        const NSRange range = value.rangeValue;
+        const int result = vlc_ml_playlist_remove(p_ml,
+                                                  self.libraryID,
+                                                  (uint32_t)range.location,
+                                                  (uint32_t)range.length);
+        if (result != VLC_SUCCESS) {
+            msg_Err(getIntf(), "Failed to remove %lu items at position %lu from playlist %lld",
+                    (unsigned long)range.length, (unsigned long)range.location, self.libraryID);
+        }
+    }
+}
+
 - (void)revealInFinder
 {
     NSURL * const URL = [NSURL URLWithString:_MRL];
@@ -1087,6 +1131,41 @@ static NSString *genreArrayDisplayString(NSArray<VLCMediaLibraryGenre *> * const
     if (res == VLC_SUCCESS)
         _favorited = favorite;
     return res;
+}
+
+- (BOOL)appendMediaItems:(NSArray<VLCMediaLibraryMediaItem *> *)mediaItems
+{
+    if (_readOnly || mediaItems.count == 0) {
+        return NO;
+    }
+
+    vlc_medialibrary_t * const p_mediaLibrary = getMediaLibrary();
+    if (p_mediaLibrary == NULL) {
+        return NO;
+    }
+
+    const size_t count = mediaItems.count;
+    int64_t * const mediaIDs = malloc(count * sizeof(int64_t));
+    if (mediaIDs == NULL) {
+        return NO;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        mediaIDs[i] = mediaItems[i].libraryID;
+    }
+
+    const int result =
+        vlc_ml_playlist_append(p_mediaLibrary, self.libraryID, mediaIDs, count);
+    free(mediaIDs);
+
+    if (result != VLC_SUCCESS) {
+        msg_Err(getIntf(), "Failed to append %zu item(s) to playlist %s (ID %lld)",
+                count, self.displayString.UTF8String, self.libraryID);
+        return NO;
+    }
+
+    // Drop the cached media list so the next -mediaItems access re-fetches.
+    _mediaItems = nil;
+    return YES;
 }
 
 @end

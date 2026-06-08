@@ -323,7 +323,9 @@ FocusScope {
                     // video memory, depending on the excess content in the last layer:
                     viewportRect: Qt.rect((width - parent.width) / 2, (height - parent.height) / 2, parent.width, parent.height)
 
-                    funcOnNextEffectureTextureChange: liveTimer.transientTurnOnLive
+                    sourceTextureProviderObserver.onTextureChanged: {
+                        liveTimer.transientTurnOnLive()
+                    }
 
                     TextureProviderIndirection {
                         id: textureProviderIndirection
@@ -431,7 +433,7 @@ FocusScope {
                                 }
 
                                 onSourceChanged: {
-                                    blurredBackground.scheduleUpdate(true) // onNextTextureChange
+                                    liveTimer.transientTurnOnLive()
                                 }
 
                                 onStatusChanged: {
@@ -1001,9 +1003,14 @@ FocusScope {
         }
     }
 
-    TapHandler {
+    MouseArea {
+        anchors.fill: parent
         acceptedButtons: Qt.BackButton
-        onTapped: MainCtx.playerView = false
+        propagateComposedEvents: true
+        cursorShape: undefined
+        onClicked: {
+            MainCtx.playerView = false
+        }
     }
 
     //filter key events to keep toolbar
